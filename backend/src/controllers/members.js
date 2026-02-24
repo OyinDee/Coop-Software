@@ -137,48 +137,88 @@ async function deleteMember(req, res) {
 async function importCSV(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
+  // Parse a flexible date string into a YYYY-MM-DD string Postgres accepts, or null
+  function parseDate(raw) {
+    if (!raw) return null;
+    const s = raw.trim();
+    if (!s) return null;
+
+    // Already ISO or DD/MM/YYYY-ish
+    if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+
+    // "Aug/2016" → 1 Aug 2016
+    const mmm_yyyy = s.match(/^([A-Za-z]{3})[\/\-](\d{4})$/);
+    if (mmm_yyyy) {
+      const d = new Date(`1 ${mmm_yyyy[1]} ${mmm_yyyy[2]}`);
+      if (!isNaN(d)) return d.toISOString().split('T')[0];
+    }
+
+    // Try generic parse
+    const d = new Date(s);
+    if (!isNaN(d)) return d.toISOString().split('T')[0];
+
+    return null;
+  }
+
   try {
-    const csvText = req.file.buffer.toString('utf-8');
+    // Strip BOM if present
+    let csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+
     const records = parse(csvText, {
       columns: true,
       skip_empty_lines: true,
       trim: true,
+      relax_column_count: true,
     });
 
     let imported = 0;
     let skipped = 0;
+    const errors = [];
 
     for (const row of records) {
-      const ledger_no = row['LEDGER No'] || row['Ledger No'] || row['ledger_no'];
-      const full_name = row['Name'] || row['FULL NAME'] || row['full_name'];
+      // Normalise all keys: trim whitespace so "DEPARTMENT " matches
+      const r = {};
+      for (const k of Object.keys(row)) r[k.trim()] = row[k];
+
+      const ledger_no = r['LEDGER No'] || r['Ledger No'] || r['ledger_no'];
+      const full_name = r['Name'] || r['FULL NAME'] || r['full_name'];
       if (!ledger_no || !full_name) { skipped++; continue; }
+
+      const date_of_admission = parseDate(r['Date of Admission'] || r['DATE OF ADMISSION']);
 
       try {
         await db.query(`
-          INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission, bank, account_number, department)
-          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+          INSERT INTO members
+            (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status,
+             phone, email, date_of_admission, bank, account_number, department,
+             next_of_kin, next_of_kin_relation)
+          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
           ON CONFLICT (ledger_no) DO NOTHING
         `, [
           ledger_no.trim(),
-          row['Staff No'] || row['STAFF NO'] || null,
-          row['GIFMIS No'] || row['GIFMIS NO'] || null,
+          r['Staff No']  || r['STAFF NO']  || null,
+          r['GIFMIS No'] || r['GIFMIS NO'] || null,
           full_name.trim(),
-          row['Gender'] || row['GENDER'] || null,
-          row['MARITAL STATUS'] || row['Marital Status'] || null,
-          row['Phone No.'] || row['PHONE'] || null,
-          row['FUOYE E-mail Address'] || row['EMAIL'] || null,
-          row['Date of Admission'] || null,
-          row['BANK'] || row['Bank'] || null,
-          row['ACCOUNT NUMBER'] || row['Account Number'] || null,
-          row['DEPARTMENT'] || row['Department'] || null,
+          r['Gender']   || r['GENDER']    || null,
+          r['MARITAL STATUS'] || r['Marital Status'] || null,
+          r['Phone No.'] || r['PHONE'] || r['Phone']  || null,
+          r['FUOYE E-mail Address'] || r['Email'] || r['EMAIL'] || null,
+          date_of_admission,
+          r['BANK']  || r['Bank']  || null,
+          r['ACCOUNT NUMBER'] || r['Account Number'] || null,
+          r['DEPARTMENT'] || r['Department'] || null,
+          r['Next of Kin'] || r['NEXT OF KIN'] || null,
+          r['RELATION                (with next of kin)'] ||
+            r['RELATION (with next of kin)'] || r['Relation'] || null,
         ]);
         imported++;
       } catch (e) {
+        errors.push(`${ledger_no}: ${e.message}`);
         skipped++;
       }
     }
 
-    res.json({ message: `${imported} members imported, ${skipped} skipped`, imported, skipped });
+    res.json({ message: `${imported} members imported, ${skipped} skipped`, imported, skipped, errors });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

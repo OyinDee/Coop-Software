@@ -20,6 +20,8 @@ export default function Members() {
   const [addOpen, setAddOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
   const [importOpen, setImportOpen] = useState(false);
+  const [importing, setImporting] = useState(false);
+  const [importResult, setImportResult] = useState(null);
   const [form, setForm] = useState(EMPTY_MEMBER);
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -81,13 +83,17 @@ export default function Members() {
 
   const handleImport = async (file) => {
     if (!file) return;
+    setImporting(true);
+    setImportResult(null);
     const fd = new FormData(); fd.append('file', file);
     try {
       const r = await api.post('/members/import/csv', fd);
-      toast(`${r.data.imported} members imported`, 'success');
-      setImportOpen(false); load();
+      setImportResult({ ok: true, ...r.data });
+      load();
     } catch (err) {
-      toast(err.response?.data?.error || 'Import failed', 'error');
+      setImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
+    } finally {
+      setImporting(false);
     }
   };
 
@@ -267,30 +273,81 @@ export default function Members() {
 
       {/* Import CSV Modal */}
       {importOpen && (
-        <Modal title="Import Members from CSV" onClose={() => setImportOpen(false)}>
+        <Modal title="Import Members from CSV" onClose={() => { if (!importing) { setImportOpen(false); setImportResult(null); } }}>
           <div className="info-box">
             Expected columns:<br />
             <code>S/N, LEDGER No, GIFMIS No, Staff No, Name, Gender, Phone No., FUOYE E-mail Address, Date of Admission, MARITAL STATUS, BANK, ACCOUNT NUMBER, DEPARTMENT</code><br /><br />
             Duplicate ledger numbers will be skipped automatically.
           </div>
-          <input type="file" accept=".csv" ref={fileRef} style={{ display: 'none' }} onChange={(e) => handleImport(e.target.files[0])} />
-          <div
-            className={`drop-zone ${dragging ? 'over' : ''}`}
-            onClick={() => fileRef.current.click()}
-            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
-            onDragLeave={() => setDragging(false)}
-            onDrop={(e) => { e.preventDefault(); setDragging(false); handleImport(e.dataTransfer.files[0]); }}
-          >
-            <div className="dz-icon">
-              <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
-                <polyline points="21 15 21 19 3 19 3 15" /><line x1="12" y1="3" x2="12" y2="15" /><polyline points="7 8 12 3 17 8" />
-              </svg>
+
+          {/* Uploading spinner */}
+          {importing && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '28px 0' }}>
+              <div style={{
+                width: 40, height: 40, borderRadius: '50%',
+                border: '3px solid var(--border2)',
+                borderTopColor: 'var(--gold)',
+                animation: 'spin 0.8s linear infinite',
+              }} />
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', letterSpacing: 1 }}>Processing CSV…</div>
             </div>
-            <div className="dz-text">Click to select CSV file, or drag and drop</div>
-            <div className="dz-sub">.csv files only</div>
-          </div>
+          )}
+
+          {/* Result summary */}
+          {!importing && importResult && (
+            <div style={{ margin: '4px 0 12px', padding: '14px 16px', borderRadius: 4, border: `1px solid ${importResult.ok ? 'rgba(62,207,142,.25)' : 'rgba(241,96,96,.25)'}`, background: importResult.ok ? 'rgba(62,207,142,.06)' : 'rgba(241,96,96,.06)' }}>
+              <div style={{ fontWeight: 600, color: importResult.ok ? 'var(--green)' : 'var(--red)', marginBottom: 6 }}>
+                {importResult.ok ? '✓ Import complete' : '✕ Import failed'}
+              </div>
+              <div style={{ fontSize: 13 }}>{importResult.message}</div>
+              {importResult.ok && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 18, fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  <span style={{ color: 'var(--green)' }}>✓ {importResult.imported} imported</span>
+                  {importResult.skipped > 0 && <span style={{ color: 'var(--amber)' }}>⚠ {importResult.skipped} skipped</span>}
+                </div>
+              )}
+              {importResult.errors?.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 4 }}>SKIPPED ROWS:</div>
+                  <div style={{ maxHeight: 100, overflowY: 'auto', fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+                    {importResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Drop zone — hidden while importing or after result */}
+          {!importing && !importResult && (
+            <>
+              <input type="file" accept=".csv" ref={fileRef} style={{ display: 'none' }} onChange={(e) => handleImport(e.target.files[0])} />
+              <div
+                className={`drop-zone ${dragging ? 'over' : ''}`}
+                onClick={() => fileRef.current.click()}
+                onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+                onDragLeave={() => setDragging(false)}
+                onDrop={(e) => { e.preventDefault(); setDragging(false); handleImport(e.dataTransfer.files[0]); }}
+              >
+                <div className="dz-icon">
+                  <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <polyline points="21 15 21 19 3 19 3 15" /><line x1="12" y1="3" x2="12" y2="15" /><polyline points="7 8 12 3 17 8" />
+                  </svg>
+                </div>
+                <div className="dz-text">Click to select CSV file, or drag and drop</div>
+                <div className="dz-sub">.csv files only</div>
+              </div>
+            </>
+          )}
+
           <div className="modal-footer">
-            <button className="btn btn-ghost" onClick={() => setImportOpen(false)}>Cancel</button>
+            {!importing && importResult ? (
+              <>
+                <button className="btn btn-ghost" onClick={() => setImportResult(null)}>Import Another</button>
+                <button className="btn btn-primary" onClick={() => { setImportOpen(false); setImportResult(null); }}>Done</button>
+              </>
+            ) : (
+              <button className="btn btn-ghost" disabled={importing} onClick={() => { setImportOpen(false); setImportResult(null); }}>Cancel</button>
+            )}
           </div>
         </Modal>
       )}

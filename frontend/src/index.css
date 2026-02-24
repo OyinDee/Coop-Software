@@ -274,6 +274,7 @@ tbody tr:hover td { background: rgba(255,255,255,.02); }
 .toast.error   { color: var(--red);   border-color: rgba(241,96,96,.3); }
 .toast.info    { color: var(--blue);  border-color: rgba(91,141,238,.3); }
 @keyframes slide-in { from { opacity:0; transform: translateX(20px); } to { opacity:1; transform: translateX(0); } }
+@keyframes spin { to { transform: rotate(360deg); } }
 
 /* ── Divider ── */
 .divider { border: none; border-top: 1px solid var(--border); margin: 20px 0; }
