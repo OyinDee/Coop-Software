@@ -33,19 +33,21 @@ async function getTransactions(req, res) {
         END AS savings_carried,
         COALESCE(sh.amount, 0) AS shares,
         COALESCE(c.amount, 0)  AS commodity,
-        -- Loan principal: every loan that has started by this month AND is still active
+        -- Loan principal: loans that have started, not yet cleared, and within their scheduled term
         COALESCE((
           SELECT SUM(l.monthly_principal) FROM loans l
           WHERE l.member_id = m.id
             AND l.status = 'active'
             AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
+            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
         ), 0) AS loan_principal_due,
-        -- Loan interest: same active loans
+        -- Loan interest: same set of loans
         COALESCE((
           SELECT SUM(l.monthly_interest) FROM loans l
           WHERE l.member_id = m.id
             AND l.status = 'active'
             AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
+            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
         ), 0) AS loan_interest_due
       FROM members m
       LEFT JOIN savings  s  ON s.member_id  = m.id AND s.month  = $1 AND s.year  = $2
@@ -101,7 +103,7 @@ async function getMonthlyReport(req, res) {
         LEFT JOIN savings s ON s.member_id = mem.id AND s.month = $1 AND s.year = $2
         WHERE mem.is_active = TRUE
       `, [m, y]),
-      // Loans: active loans that have started by this month
+      // Loans: active loans within their scheduled term
       db.query(`
         SELECT
           COALESCE(SUM(monthly_principal), 0) AS principal,
@@ -109,6 +111,7 @@ async function getMonthlyReport(req, res) {
         FROM loans l
         WHERE l.status = 'active'
           AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
+          AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
       `, [m, y]),
       db.query('SELECT COALESCE(SUM(amount),0) as total FROM commodity WHERE month=$1 AND year=$2', [m, y]),
     ]);

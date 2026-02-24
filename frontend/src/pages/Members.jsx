@@ -22,10 +22,14 @@ export default function Members() {
   const [importOpen, setImportOpen] = useState(false);
   const [importing, setImporting] = useState(false);
   const [importResult, setImportResult] = useState(null);
+  const [balImportOpen, setBalImportOpen] = useState(false);
+  const [balImporting, setBalImporting] = useState(false);
+  const [balImportResult, setBalImportResult] = useState(null);
   const [form, setForm] = useState(EMPTY_MEMBER);
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
   const fileRef = useRef();
+  const balFileRef = useRef();
   const toast = useToast();
   const navigate = useNavigate();
 
@@ -97,6 +101,22 @@ export default function Members() {
     }
   };
 
+  const handleBalanceImport = async (file) => {
+    if (!file) return;
+    setBalImporting(true);
+    setBalImportResult(null);
+    const fd = new FormData(); fd.append('file', file);
+    try {
+      const r = await api.post('/members/import/balances', fd);
+      setBalImportResult({ ok: true, ...r.data });
+      load();
+    } catch (err) {
+      setBalImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
+    } finally {
+      setBalImporting(false);
+    }
+  };
+
   const loanBadge = (m) => {
     const n = parseInt(m.active_loans);
     if (!n) return <span className="badge badge-green">Clear</span>;
@@ -115,6 +135,12 @@ export default function Members() {
               <polyline points="21 15 21 19 3 19 3 15" /><line x1="12" y1="3" x2="12" y2="15" /><polyline points="7 8 12 3 17 8" />
             </svg>
             Import CSV
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setBalImportOpen(true)}>
+            <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+              <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+            </svg>
+            Import Balances
           </button>
           <button className="btn btn-primary btn-sm" onClick={openAdd}>
             <svg width="12" height="12" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
@@ -347,6 +373,79 @@ export default function Members() {
               </>
             ) : (
               <button className="btn btn-ghost" disabled={importing} onClick={() => { setImportOpen(false); setImportResult(null); }}>Cancel</button>
+            )}
+          </div>
+        </Modal>
+      )}
+
+      {/* Import Balances Modal */}
+      {balImportOpen && (
+        <Modal title="Import Opening Balances" onClose={() => { if (!balImporting) { setBalImportOpen(false); setBalImportResult(null); } }}>
+          <div className="info-box">
+            Expected columns: <code>LEDGER No</code> (or <code>Staff No</code>) plus any of:<br />
+            <code>SAVINGS &nbsp; SHARES &nbsp; LOAN &nbsp; LN INT &nbsp; COMM &nbsp; OTHERS</code><br /><br />
+            Members are matched by Ledger No first, then Staff No. Balances are stored as the
+            opening balance (Jan 2026). Re-importing the same file will update existing opening balances.
+          </div>
+
+          {balImporting && (
+            <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '28px 0' }}>
+              <div style={{ width: 40, height: 40, borderRadius: '50%', border: '3px solid var(--border2)', borderTopColor: 'var(--gold)', animation: 'spin 0.8s linear infinite' }} />
+              <div style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)', letterSpacing: 1 }}>Processing balances…</div>
+            </div>
+          )}
+
+          {!balImporting && balImportResult && (
+            <div style={{ margin: '4px 0 12px', padding: '14px 16px', borderRadius: 4, border: `1px solid ${balImportResult.ok ? 'rgba(62,207,142,.25)' : 'rgba(241,96,96,.25)'}`, background: balImportResult.ok ? 'rgba(62,207,142,.06)' : 'rgba(241,96,96,.06)' }}>
+              <div style={{ fontWeight: 600, color: balImportResult.ok ? 'var(--green)' : 'var(--red)', marginBottom: 6 }}>
+                {balImportResult.ok ? '✓ Import complete' : '✕ Import failed'}
+              </div>
+              <div style={{ fontSize: 13 }}>{balImportResult.message}</div>
+              {balImportResult.ok && (
+                <div style={{ marginTop: 8, display: 'flex', gap: 18, fontFamily: 'var(--mono)', fontSize: 11 }}>
+                  <span style={{ color: 'var(--green)' }}>✓ {balImportResult.imported} updated</span>
+                  {balImportResult.skipped > 0 && <span style={{ color: 'var(--amber)' }}>⚠ {balImportResult.skipped} skipped</span>}
+                </div>
+              )}
+              {balImportResult.errors?.length > 0 && (
+                <div style={{ marginTop: 10 }}>
+                  <div style={{ fontFamily: 'var(--mono)', fontSize: 10, color: 'var(--muted)', marginBottom: 4 }}>SKIPPED ROWS:</div>
+                  <div style={{ maxHeight: 100, overflowY: 'auto', fontSize: 11, color: 'var(--muted)', lineHeight: 1.7 }}>
+                    {balImportResult.errors.map((e, i) => <div key={i}>{e}</div>)}
+                  </div>
+                </div>
+              )}
+            </div>
+          )}
+
+          {!balImporting && !balImportResult && (
+            <>
+              <input type="file" accept=".csv" ref={balFileRef} style={{ display: 'none' }} onChange={(e) => handleBalanceImport(e.target.files[0])} />
+              <div
+                className="drop-zone"
+                onClick={() => balFileRef.current.click()}
+                onDragOver={(e) => { e.preventDefault(); }}
+                onDrop={(e) => { e.preventDefault(); handleBalanceImport(e.dataTransfer.files[0]); }}
+              >
+                <div className="dz-icon">
+                  <svg width="28" height="28" fill="none" stroke="currentColor" strokeWidth="1.5" viewBox="0 0 24 24">
+                    <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
+                  </svg>
+                </div>
+                <div className="dz-text">Click to select balances CSV, or drag and drop</div>
+                <div className="dz-sub">.csv files only</div>
+              </div>
+            </>
+          )}
+
+          <div className="modal-footer">
+            {!balImporting && balImportResult ? (
+              <>
+                <button className="btn btn-ghost" onClick={() => setBalImportResult(null)}>Import Another</button>
+                <button className="btn btn-primary" onClick={() => { setBalImportOpen(false); setBalImportResult(null); }}>Done</button>
+              </>
+            ) : (
+              <button className="btn btn-ghost" disabled={balImporting} onClick={() => { setBalImportOpen(false); setBalImportResult(null); }}>Cancel</button>
             )}
           </div>
         </Modal>

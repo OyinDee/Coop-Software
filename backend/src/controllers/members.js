@@ -1,4 +1,8 @@
 const db = require('../db');
+// loans table needs optional description column – add it if it doesn't exist
+// (run once on startup, harmless if already present)
+db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
+
 const { parse } = require('csv-parse/sync');
 
 async function getMembers(req, res) {
@@ -224,4 +228,117 @@ async function importCSV(req, res) {
   }
 }
 
-module.exports = { getMembers, getMember, createMember, updateMember, deleteMember, importCSV };
+async function importBalances(req, res) {
+  if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
+
+  try {
+    let csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+    const records = parse(csvText, {
+      columns: true, skip_empty_lines: true, trim: true, relax_column_count: true,
+    });
+
+    let imported = 0, skipped = 0;
+    const errors = [];
+
+    for (const row of records) {
+      // Normalise column names (trim whitespace)
+      const r = {};
+      for (const k of Object.keys(row)) r[k.trim()] = row[k];
+
+      const ledger_no = r['LEDGER No'] || r['LEDGER NO'] || r['ledger_no'];
+      const staff_no  = r['Staff No']  || r['STAFF NO']  || r['staff_no'];
+      if (!ledger_no && !staff_no) { skipped++; continue; }
+
+      // Look up member by ledger_no first, then staff_no
+      let memberRes;
+      if (ledger_no) {
+        memberRes = await db.query('SELECT id FROM members WHERE ledger_no=$1', [ledger_no.trim()]);
+      }
+      if ((!memberRes || !memberRes.rows.length) && staff_no) {
+        memberRes = await db.query('SELECT id FROM members WHERE staff_no=$1', [staff_no.trim()]);
+      }
+      if (!memberRes || !memberRes.rows.length) {
+        errors.push(`${ledger_no || staff_no}: member not found`);
+        skipped++;
+        continue;
+      }
+      const memberId = memberRes.rows[0].id;
+
+      const parseAmt = (v) => { const n = parseFloat((v || '').toString().replace(/,/g, '')); return isNaN(n) ? 0 : n; };
+      const savings   = parseAmt(r['SAVINGS']);
+      const shares    = parseAmt(r['SHARES']);
+      const loan      = parseAmt(r['LOAN']);
+      const loanInt   = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST']);
+      const commodity = parseAmt(r['COMM'] || r['COMMODITY']);
+      const others    = parseAmt(r['OTHERS']);
+
+      // Use month=1, year=2026 as the "opening balance" period for savings/shares/commodity
+      // ON CONFLICT DO UPDATE so re-importing updates the opening balance
+      const OB_MONTH = 1, OB_YEAR = 2026;
+
+      const client = await db.getClient();
+      try {
+        await client.query('BEGIN');
+
+        if (savings > 0) {
+          await client.query(`
+            INSERT INTO savings (member_id, amount, month, year, description)
+            VALUES ($1,$2,$3,$4,'Opening Balance')
+            ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
+          `, [memberId, savings, OB_MONTH, OB_YEAR]);
+        }
+
+        if (shares > 0) {
+          await client.query(`
+            INSERT INTO shares (member_id, amount, month, year)
+            VALUES ($1,$2,$3,$4)
+            ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
+          `, [memberId, shares, OB_MONTH, OB_YEAR]);
+        }
+
+        if (loan > 0) {
+          // Remove any previous opening-balance loan for this member before re-importing
+          await client.query(`DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`, [memberId]);
+          const months = 12;
+          await client.query(`
+            INSERT INTO loans
+              (member_id, principal, months, remaining_balance,
+               monthly_principal, total_interest, monthly_interest,
+               interest_paid, months_paid, status, date_issued, description)
+            VALUES ($1,$2,$3,$2, $4,$5,$6, 0,0,'active', '2026-01-01', 'Opening Balance')
+          `, [memberId, loan, months, loan / months, loanInt, loanInt / months]);
+        }
+
+        if (commodity > 0) {
+          await client.query(`
+            INSERT INTO commodity (member_id, amount, month, year, description)
+            VALUES ($1,$2,$3,$4,'Opening Balance')
+          `, [memberId, commodity, OB_MONTH, OB_YEAR]);
+        }
+
+        if (others > 0) {
+          // Store "Others" as a separate commodity line
+          await client.query(`
+            INSERT INTO commodity (member_id, amount, month, year, description)
+            VALUES ($1,$2,$3,$4,'Opening Balance – Others')
+          `, [memberId, others, OB_MONTH, OB_YEAR]);
+        }
+
+        await client.query('COMMIT');
+        imported++;
+      } catch (e) {
+        await client.query('ROLLBACK');
+        errors.push(`${ledger_no || staff_no}: ${e.message}`);
+        skipped++;
+      } finally {
+        client.release();
+      }
+    }
+
+    res.json({ message: `${imported} members updated, ${skipped} skipped`, imported, skipped, errors });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getMembers, getMember, createMember, updateMember, deleteMember, importCSV, importBalances };

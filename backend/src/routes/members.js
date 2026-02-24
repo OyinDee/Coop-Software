@@ -8,6 +8,7 @@ const {
   updateMember,
   deleteMember,
   importCSV,
+  importBalances,
 } = require('../controllers/members');
 const authenticate = require('../middleware/auth');
 
@@ -21,5 +22,6 @@ router.post('/', createMember);
 router.put('/:id', updateMember);
 router.delete('/:id', deleteMember);
 router.post('/import/csv', upload.single('file'), importCSV);
+router.post('/import/balances', upload.single('file'), importBalances);
 
 module.exports = router;
