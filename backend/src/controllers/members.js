@@ -240,22 +240,32 @@ async function importBalances(req, res) {
     let imported = 0, skipped = 0;
     const errors = [];
 
-    for (const row of records) {
-      // Normalise column names (trim whitespace)
-      const r = {};
-      for (const k of Object.keys(row)) r[k.trim()] = row[k];
+    // Helper: get value by case-insensitive key
+    const colNames = records.length > 0 ? Object.keys(records[0]).map(k => k.trim()) : [];
 
-      const ledger_no = r['LEDGER No'] || r['LEDGER NO'] || r['ledger_no'];
-      const staff_no  = r['Staff No']  || r['STAFF NO']  || r['staff_no'];
-      if (!ledger_no && !staff_no) { skipped++; continue; }
+    for (const row of records) {
+      // Normalise all column names to UPPERCASE + trimmed for case-insensitive matching
+      const r = {};
+      for (const k of Object.keys(row)) r[k.trim().toUpperCase()] = (row[k] || '').toString().trim();
+
+      const ledger_no = r['LEDGER NO'] || r['LEDGER_NO'] || r['LEDGER NO.'] || r['LEDGER'];
+      const staff_no  = r['STAFF NO']  || r['STAFF_NO']  || r['STAFF NO.'] || r['STAFF'];
+      if (!ledger_no && !staff_no) {
+        // Report first skipped row's available columns to help debug
+        if (skipped === 0) {
+          errors.push(`Row skipped: could not find 'LEDGER NO' or 'STAFF NO' column. Available columns: ${colNames.join(', ')}`);
+        }
+        skipped++;
+        continue;
+      }
 
       // Look up member by ledger_no first, then staff_no
       let memberRes;
       if (ledger_no) {
-        memberRes = await db.query('SELECT id FROM members WHERE ledger_no=$1', [ledger_no.trim()]);
+        memberRes = await db.query('SELECT id FROM members WHERE UPPER(TRIM(ledger_no))=$1', [ledger_no.toUpperCase()]);
       }
       if ((!memberRes || !memberRes.rows.length) && staff_no) {
-        memberRes = await db.query('SELECT id FROM members WHERE staff_no=$1', [staff_no.trim()]);
+        memberRes = await db.query('SELECT id FROM members WHERE UPPER(TRIM(staff_no))=$1', [staff_no.toUpperCase()]);
       }
       if (!memberRes || !memberRes.rows.length) {
         errors.push(`${ledger_no || staff_no}: member not found`);
@@ -268,9 +278,9 @@ async function importBalances(req, res) {
       const savings   = parseAmt(r['SAVINGS']);
       const shares    = parseAmt(r['SHARES']);
       const loan      = parseAmt(r['LOAN']);
-      const loanInt   = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST']);
+      const loanInt   = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST'] || r['LNINT'] || r['LOAN INT']);
       const commodity = parseAmt(r['COMM'] || r['COMMODITY']);
-      const others    = parseAmt(r['OTHERS']);
+      const others    = parseAmt(r['OTHERS'] || r['OTHER']);
 
       // Use month=1, year=2026 as the "opening balance" period for savings/shares/commodity
       // ON CONFLICT DO UPDATE so re-importing updates the opening balance
