@@ -39,9 +39,14 @@ export default function Savings() {
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
-      if (editItem) {
+      if (editItem && editItem.id) {
+        // Real existing record — update it
         await api.put(`/savings/${editItem.id}`, { amount: form.amount, description: form.description });
         toast('Savings updated');
+      } else if (editItem && !editItem.id) {
+        // Carried-forward row (no real record yet) — create a real one for this month
+        await api.post('/savings', { ...form, month: editItem.month, year: editItem.year, member_id: editItem.member_id });
+        toast('Savings recorded');
       } else {
         await api.post('/savings', form);
         toast('Savings recorded');

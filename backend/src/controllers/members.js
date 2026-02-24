@@ -11,13 +11,11 @@ async function getMembers(req, res) {
     let query = `
       SELECT
         m.*,
-        COALESCE(SUM(s.amount), 0) AS total_savings,
-        COALESCE(SUM(l.remaining_balance), 0) AS loan_balance,
-        COALESCE(SUM(l.total_interest - l.interest_paid), 0) AS interest_due,
-        COUNT(CASE WHEN l.status = 'active' THEN 1 END) AS active_loans
+        COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id), 0) AS total_savings,
+        COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_balance,
+        COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS interest_due,
+        (SELECT COUNT(*) FROM loans l WHERE l.member_id = m.id AND l.status = 'active') AS active_loans
       FROM members m
-      LEFT JOIN savings s ON s.member_id = m.id
-      LEFT JOIN loans l ON l.member_id = m.id AND l.status = 'active'
       WHERE m.is_active = TRUE
     `;
     const params = [];
@@ -25,7 +23,7 @@ async function getMembers(req, res) {
       params.push(`%${search}%`);
       query += ` AND (m.full_name ILIKE $1 OR m.ledger_no ILIKE $1 OR m.staff_no ILIKE $1)`;
     }
-    query += ` GROUP BY m.id ORDER BY m.ledger_no`;
+    query += ` ORDER BY m.ledger_no`;
     const result = await db.query(query, params);
     res.json({ members: result.rows, total: result.rowCount });
   } catch (err) {
@@ -328,19 +326,50 @@ async function importBalances(req, res) {
         }
 
         // ── LOAN ─────────────────────────────────────────────────────────────
-        // loanBF = remaining balance going INTO Jan 2026 (B/F)
-        // monthlyPrincipal = deduction per month
-        // months = how many more months the loan runs (including Jan 2026)
+        // loanBF           = Loan Prin. Bal. B/F  (owed before Jan payment)
+        // monthlyPrincipal = LESS: Loan Principal Repayment (Jan deduction)
+        // loanIntBF        = Loan Interest Balance B/F (interest owed before Jan)
+        // monthlyInterest  = LESS: Loan Interest paid this month (Jan interest paid)
+        //
+        // We store the loan with the B/F principal, then immediately apply the
+        // January repayment so remaining_balance, months_paid and interest_paid
+        // are all correct going into February.
         if (loanBF > 0 && monthlyPrincipal > 0) {
           await client.query(`DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`, [memberId]);
           const months = Math.ceil(loanBF / monthlyPrincipal);
-          await client.query(`
+          // Jan principal payment may be less than monthly_principal if it's also the last month
+          const janPrincipal = Math.min(monthlyPrincipal, loanBF);
+          const janInterest  = monthlyInterest;
+          const balanceAfterJan = loanBF - janPrincipal;
+          const intBalanceAfterJan = Math.max(loanIntBF - janInterest, 0);
+          const loanStatus = balanceAfterJan <= 0 ? 'cleared' : 'active';
+
+          const loanRow = await client.query(`
             INSERT INTO loans
               (member_id, principal, months, remaining_balance,
                monthly_principal, total_interest, monthly_interest,
                interest_paid, months_paid, status, date_issued, description)
-            VALUES ($1,$2,$3,$2,$4,$5,$6,0,0,'active','2026-01-01','Opening Balance')
-          `, [memberId, loanBF, months, monthlyPrincipal, loanIntBF, monthlyInterest]);
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,'2026-01-01','Opening Balance')
+            RETURNING id
+          `, [
+            memberId,
+            loanBF,          // principal = B/F (starting point for our records)
+            months,
+            balanceAfterJan, // remaining after Jan payment
+            monthlyPrincipal,
+            loanIntBF,       // total_interest = interest owed at B/F point
+            monthlyInterest,
+            janInterest,     // interest_paid = Jan interest paid
+            loanStatus,
+          ]);
+
+          // Record the January repayment explicitly
+          if (janPrincipal > 0 || janInterest > 0) {
+            await client.query(`
+              INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year)
+              VALUES ($1,$2,$3,$4,1,2026)
+            `, [loanRow.rows[0].id, memberId, janPrincipal, janInterest]);
+          }
         }
 
         // ── COMMODITY ────────────────────────────────────────────────────────
