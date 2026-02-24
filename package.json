@@ -1,0 +1,12 @@
+{
+  "name": "coop-society-monorepo",
+  "private": true,
+  "scripts": {
+    "install:all": "cd backend && npm install && cd ../frontend && npm install",
+    "dev": "npm run dev:backend & npm run dev:frontend",
+    "dev:backend": "cd backend && npm run dev",
+    "dev:frontend": "cd frontend && npm run dev",
+    "setup": "cd backend && npm run migrate && npm run seed",
+    "generate-icons": "cd frontend && npm run generate-icons"
+  }
+}
