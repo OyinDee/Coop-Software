@@ -382,10 +382,12 @@ export default function Members() {
       {balImportOpen && (
         <Modal title="Import Opening Balances" onClose={() => { if (!balImporting) { setBalImportOpen(false); setBalImportResult(null); } }}>
           <div className="info-box">
-            Expected columns: <code>LEDGER No</code> (or <code>Staff No</code>) plus any of:<br />
-            <code>SAVINGS &nbsp; SHARES &nbsp; LOAN &nbsp; LN INT &nbsp; COMM &nbsp; OTHERS</code><br /><br />
-            Members are matched by Ledger No first, then Staff No. Balances are stored as the
-            opening balance (Jan 2026). Re-importing the same file will update existing opening balances.
+            <strong>Step 1:</strong> Import member records first using <em>Import CSV</em> (name, email, bank, etc.).<br />
+            <strong>Step 2:</strong> Import this file to set opening balances.<br /><br />
+            <strong>Transaction sheet format</strong> (auto-detected via <code>L/No</code> column):<br />
+            Reads <code>Savings B/F</code>, <code>ADD: Savings during the month</code>, <code>Loan Prin. Bal. B/F</code>, <code>LESS: Loan Principal Repayment</code>, <code>Loan Interest Balance B/F</code>, <code>Commodity Sales Bal. B/F</code>.<br /><br />
+            <strong>Simple format:</strong> <code>LEDGER No, SAVINGS, LOAN, LN INT, COMM, OTHERS</code><br /><br />
+            Members matched by Ledger No first, then Staff No. Re-importing updates existing records.
           </div>
 
           {balImporting && (

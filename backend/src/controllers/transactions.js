@@ -33,17 +33,29 @@ async function getTransactions(req, res) {
         END AS savings_carried,
         COALESCE(sh.amount, 0) AS shares,
         COALESCE(c.amount, 0)  AS commodity,
-        -- Loan principal: loans that have started, not yet cleared, and within their scheduled term
+        -- Loan principal: smart-capped — last month pays only the true remainder
         COALESCE((
-          SELECT SUM(l.monthly_principal) FROM loans l
+          SELECT SUM(
+            CASE
+              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
+                THEN GREATEST(l.principal - (l.months - 1) * l.monthly_principal, 0)
+              ELSE l.monthly_principal
+            END
+          ) FROM loans l
           WHERE l.member_id = m.id
             AND l.status = 'active'
             AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
             AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
         ), 0) AS loan_principal_due,
-        -- Loan interest: same set of loans
+        -- Loan interest: smart-capped on the last month too
         COALESCE((
-          SELECT SUM(l.monthly_interest) FROM loans l
+          SELECT SUM(
+            CASE
+              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
+                THEN GREATEST(l.total_interest - (l.months - 1) * l.monthly_interest, 0)
+              ELSE l.monthly_interest
+            END
+          ) FROM loans l
           WHERE l.member_id = m.id
             AND l.status = 'active'
             AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
@@ -103,11 +115,23 @@ async function getMonthlyReport(req, res) {
         LEFT JOIN savings s ON s.member_id = mem.id AND s.month = $1 AND s.year = $2
         WHERE mem.is_active = TRUE
       `, [m, y]),
-      // Loans: active loans within their scheduled term
+      // Loans: active loans within their scheduled term, smart-capped on final month
       db.query(`
         SELECT
-          COALESCE(SUM(monthly_principal), 0) AS principal,
-          COALESCE(SUM(monthly_interest),  0) AS interest
+          COALESCE(SUM(
+            CASE
+              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
+                THEN GREATEST(l.principal - (l.months - 1) * l.monthly_principal, 0)
+              ELSE l.monthly_principal
+            END
+          ), 0) AS principal,
+          COALESCE(SUM(
+            CASE
+              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
+                THEN GREATEST(l.total_interest - (l.months - 1) * l.monthly_interest, 0)
+              ELSE l.monthly_interest
+            END
+          ), 0) AS interest
         FROM loans l
         WHERE l.status = 'active'
           AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
