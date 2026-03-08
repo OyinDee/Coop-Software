@@ -1,14 +1,18 @@
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
+import Pagination from '../components/Pagination';
 import api from '../api';
 import { fmtNGN } from '../utils/format';
+
+const PAGE_SIZE = 25;
 
 export default function PersonalLedger() {
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [page, setPage] = useState(1);
   const navigate = useNavigate();
 
   const load = (q = '') => {
@@ -23,6 +27,11 @@ export default function PersonalLedger() {
     const t = setTimeout(() => load(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => { setPage(1); }, [search]);
+
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
   return (
     <Layout title="Personal Ledger">
@@ -57,7 +66,7 @@ export default function PersonalLedger() {
               </tr>
             </thead>
             <tbody>
-              {members.map((m) => (
+              {pageMembers.map((m) => (
                 <tr key={m.id} style={{ cursor: 'pointer' }} onClick={() => navigate(`/ledger/${m.id}`)}>
                   <td className="td-mono td-gold">{m.ledger_no}</td>
                   <td>{m.full_name}</td>
@@ -74,6 +83,7 @@ export default function PersonalLedger() {
             </tbody>
           </table>
         )}
+        <Pagination page={page} pageSize={PAGE_SIZE} total={members.length} onChange={(p) => { setPage(p); window.scrollTo(0, 0); }} />
       </div>
     </Layout>
   );

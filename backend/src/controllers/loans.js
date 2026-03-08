@@ -36,6 +36,13 @@ async function createLoan(req, res) {
 
   try {
     const p = parseFloat(principal);
+
+    // Fetch current interest rate from settings (default 5%)
+    const settingsRes = await db.query(
+      "SELECT value FROM app_settings WHERE key = 'loan_interest_rate'"
+    );
+    const rate = settingsRes.rows[0] ? parseFloat(settingsRes.rows[0].value) / 100 : 0.05;
+
     let m;
     let monthly_principal;
 
@@ -43,20 +50,22 @@ async function createLoan(req, res) {
       m = parseInt(months);
       monthly_principal = p / m;
     } else if (monthly_payment) {
-      monthly_principal = parseFloat(monthly_payment);
-      m = Math.ceil(p / monthly_principal);
+      // monthly_payment is the total monthly repayment (principal + interest)
+      const totalRepayment = parseFloat(monthly_payment);
+      m = Math.ceil((p * (1 + rate)) / totalRepayment);
+      monthly_principal = p / m;
     } else {
       return res.status(400).json({ error: 'Either months or monthly_payment required' });
     }
 
-    const total_interest = p * 0.05;
+    const total_interest = p * rate;
     const monthly_interest = total_interest / m;
 
     const result = await db.query(`
-      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,'active')
+      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, interest_rate, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$8,'active')
       RETURNING *
-    `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest]);
+    `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest, rate]);
 
     res.status(201).json({ loan: result.rows[0] });
   } catch (err) {
@@ -91,7 +100,7 @@ async function deleteLoan(req, res) {
 
 async function addRepayment(req, res) {
   const { id } = req.params;
-  const { month, year } = req.body;
+  const { month, year, principal_paid, interest_paid, description } = req.body;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -100,8 +109,16 @@ async function addRepayment(req, res) {
     if (!loan) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Loan not found' }); }
     if (loan.status !== 'active') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is not active' }); }
 
-    const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - parseFloat(loan.monthly_principal));
-    const newInterestPaid = parseFloat(loan.interest_paid) + parseFloat(loan.monthly_interest);
+    // Use provided amounts, or fall back to scheduled monthly amounts
+    const principalAmount = principal_paid !== undefined
+      ? parseFloat(principal_paid)
+      : parseFloat(loan.monthly_principal);
+    const interestAmount = interest_paid !== undefined
+      ? parseFloat(interest_paid)
+      : parseFloat(loan.monthly_interest);
+
+    const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalAmount);
+    const newInterestPaid = parseFloat(loan.interest_paid) + interestAmount;
     const newMonthsPaid = loan.months_paid + 1;
     const newStatus = newBalance <= 0 ? 'cleared' : 'active';
 
@@ -111,9 +128,9 @@ async function addRepayment(req, res) {
     `, [newBalance, newInterestPaid, newMonthsPaid, newStatus, id]);
 
     await client.query(`
-      INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year)
-      VALUES ($1,$2,$3,$4,$5,$6)
-    `, [id, loan.member_id, loan.monthly_principal, loan.monthly_interest, month, year]);
+      INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)
+      VALUES ($1,$2,$3,$4,$5,$6,$7)
+    `, [id, loan.member_id, principalAmount, interestAmount, month, year, description || null]);
 
     await client.query('COMMIT');
     res.json({ message: 'Repayment recorded', newBalance, newStatus });
@@ -125,4 +142,24 @@ async function addRepayment(req, res) {
   }
 }
 
-module.exports = { getLoans, getMemberLoans, createLoan, updateLoan, deleteLoan, addRepayment };
+async function getRepayments(req, res) {
+  const { id } = req.params;
+  try {
+    const loanRes = await db.query(`
+      SELECT l.*, m.full_name, m.ledger_no
+      FROM loans l JOIN members m ON m.id = l.member_id
+      WHERE l.id = $1
+    `, [id]);
+    if (!loanRes.rows[0]) return res.status(404).json({ error: 'Loan not found' });
+
+    const repayRes = await db.query(`
+      SELECT * FROM loan_repayments WHERE loan_id = $1 ORDER BY year ASC, month ASC, created_at ASC
+    `, [id]);
+
+    res.json({ loan: loanRes.rows[0], repayments: repayRes.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getLoans, getMemberLoans, createLoan, updateLoan, deleteLoan, addRepayment, getRepayments };

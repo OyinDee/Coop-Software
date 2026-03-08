@@ -9,6 +9,9 @@ const savingsRoutes = require('./routes/savings');
 const dashboardRoutes = require('./routes/dashboard');
 const transactionRoutes = require('./routes/transactions');
 const commodityRoutes = require('./routes/commodity');
+const settingsRoutes   = require('./routes/settings');
+const balancesRoutes   = require('./routes/balances');
+const deductionsRoutes = require('./routes/deductions');
 
 const app = express();
 
@@ -34,6 +37,9 @@ app.use('/api/savings', savingsRoutes);
 app.use('/api/dashboard', dashboardRoutes);
 app.use('/api/transactions', transactionRoutes);
 app.use('/api/commodity', commodityRoutes);
+app.use('/api/settings',    settingsRoutes);
+app.use('/api/balances',    balancesRoutes);
+app.use('/api/deductions',  deductionsRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

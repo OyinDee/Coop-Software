@@ -11,6 +11,9 @@ import Loans from './pages/Loans';
 import Savings from './pages/Savings';
 import Commodity from './pages/Commodity';
 import Transactions from './pages/Transactions';
+import Settings from './pages/Settings';
+import Balances from './pages/Balances';
+import Deductions from './pages/Deductions';
 import PWAInstallBanner from './components/PWAInstallBanner';
 
 function ProtectedRoute({ children }) {
@@ -42,6 +45,9 @@ export default function App() {
             <Route path="/savings" element={<ProtectedRoute><Savings /></ProtectedRoute>} />
             <Route path="/commodity" element={<ProtectedRoute><Commodity /></ProtectedRoute>} />
             <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
+            <Route path="/balances"    element={<ProtectedRoute><Balances /></ProtectedRoute>} />
+            <Route path="/deductions"  element={<ProtectedRoute><Deductions /></ProtectedRoute>} />
+            <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           </Routes>
           <PWAInstallBanner />
         </BrowserRouter>

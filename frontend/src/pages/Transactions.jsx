@@ -28,7 +28,7 @@ export default function Transactions() {
 
   const exportCSV = () => {
     let csv = `Monthly Transactions — ${MONTHS[month - 1]} ${year}\n\n`;
-    csv += 'Ledger No,Member,Savings,Savings Status,Shares,Commodity,Loan Principal Due,Loan Interest Due\n';
+    csv += 'Ledger No,Member,Savings,Savings Status,Shares,Commodity,Loan Repayment Due,Loan Interest Due\n';
     data.forEach((r) => {
       const savStatus = r.savings_carried ? 'carried fwd' : (parseFloat(r.savings) > 0 ? 'recorded' : 'none');
       csv += `${r.ledger_no},"${r.full_name}",${r.savings},${savStatus},${r.shares},${r.commodity},${r.loan_principal_due},${r.loan_interest_due}\n`;
@@ -101,7 +101,7 @@ export default function Transactions() {
               <thead>
                 <tr>
                   <th>Ledger No</th><th>Member</th><th>Savings</th><th>Shares</th>
-                  <th>Commodity</th><th>Loan Principal</th><th>Loan Interest</th>
+                  <th>Commodity</th><th>Loan Repayment</th><th>Loan Interest</th>
                 </tr>
               </thead>
               <tbody>

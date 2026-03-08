@@ -14,7 +14,7 @@ export function monthName(month) {
   return ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][month - 1] || '';
 }
 
-export function calcLoan({ principal, months, monthlyPayment }) {
+export function calcLoan({ principal, months, monthlyPayment, rate = 0.05 }) {
   const p = parseFloat(principal);
   if (!p) return null;
   let m, monthly_principal;
@@ -22,18 +22,21 @@ export function calcLoan({ principal, months, monthlyPayment }) {
     m = parseInt(months);
     monthly_principal = p / m;
   } else if (monthlyPayment) {
-    monthly_principal = parseFloat(monthlyPayment);
-    m = Math.ceil(p / monthly_principal);
+    // monthlyPayment is the total monthly repayment (principal + interest combined)
+    const totalRepayment = parseFloat(monthlyPayment);
+    m = Math.ceil((p * (1 + rate)) / totalRepayment);
+    monthly_principal = p / m;
   } else {
     return null;
   }
-  const total_interest = p * 0.05;
+  const total_interest = p * rate;
   const monthly_interest = total_interest / m;
   return {
     months: m,
     monthly_principal,
     total_interest,
     monthly_interest,
+    monthly_repayment: monthly_principal + monthly_interest,
     total_payable: p + total_interest,
   };
 }

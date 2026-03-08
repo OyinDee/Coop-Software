@@ -9,6 +9,7 @@ const {
   deleteMember,
   importCSV,
   importBalances,
+  getMemberLedger,
 } = require('../controllers/members');
 const authenticate = require('../middleware/auth');
 
@@ -17,6 +18,7 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', getMembers);
+router.get('/:id/ledger', getMemberLedger);
 router.get('/:id', getMember);
 router.post('/', createMember);
 router.put('/:id', updateMember);

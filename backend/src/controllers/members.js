@@ -129,8 +129,8 @@ async function updateMember(req, res) {
 async function deleteMember(req, res) {
   const { id } = req.params;
   try {
-    await db.query('UPDATE members SET is_active = FALSE WHERE id = $1', [id]);
-    res.json({ message: 'Member deactivated' });
+    await db.query('DELETE FROM members WHERE id = $1', [id]);
+    res.json({ message: 'Member deleted' });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -402,4 +402,106 @@ async function importBalances(req, res) {
   }
 }
 
-module.exports = { getMembers, getMember, createMember, updateMember, deleteMember, importCSV, importBalances };
+// ── Personal Ledger: full year view per member ────────────────────────────────
+async function getMemberLedger(req, res) {
+  const memberId = parseInt(req.params.id);
+  const year     = parseInt(req.query.year) || new Date().getFullYear();
+
+  try {
+    // All monthly_trans for this member/year
+    const transRes = await db.query(
+      `SELECT month, column_key, amount FROM monthly_trans
+       WHERE member_id=$1 AND year=$2 ORDER BY month`,
+      [memberId, year]
+    );
+    const byMonth = {};
+    for (const r of transRes.rows) {
+      if (!byMonth[r.month]) byMonth[r.month] = {};
+      byMonth[r.month][r.column_key] = parseFloat(r.amount) || 0;
+    }
+
+    // Shares additions this year
+    const sharesRes = await db.query(
+      `SELECT month, amount FROM shares WHERE member_id=$1 AND year=$2`,
+      [memberId, year]
+    );
+    const sharesMap = {};
+    for (const s of sharesRes.rows) sharesMap[s.month] = parseFloat(s.amount) || 0;
+
+    // Shares B/F = cumulative before this year
+    const sharesBFRes = await db.query(
+      `SELECT COALESCE(SUM(amount),0) AS total FROM shares WHERE member_id=$1 AND year<$2`,
+      [memberId, year]
+    );
+    const sharesBF = parseFloat(sharesBFRes.rows[0].total) || 0;
+
+    // B/F from earliest month's _bf columns
+    const months = Object.keys(byMonth).map(Number).sort((a, b) => a - b);
+    const firstData = months.length ? (byMonth[months[0]] || {}) : {};
+    const bf = {
+      savings_bf:  firstData.savings_bf   || 0,
+      savings_bank_bf: 0,
+      shares_bf:   sharesBF,
+      loan_bal_bf: firstData.loan_bal_bf  || 0,
+      loan_int_bf: firstData.loan_int_bf  || 0,
+      comm_bal_bf: firstData.comm_bal_bf  || 0,
+    };
+
+    // Build 12 monthly rows
+    const g = (d, k) => (d ? d[k] || 0 : 0);
+    const rows = [];
+    for (let m = 1; m <= 12; m++) {
+      const d = byMonth[m] || null;
+      rows.push({
+        month: m,
+        has_data: !!(d || sharesMap[m]),
+        savings_withdrawal:  g(d, 'savings_withdrawal'),
+        savings_add:         g(d, 'savings_add'),
+        savings_add_bank:    g(d, 'savings_add_bank'),
+        shares:              sharesMap[m] || 0,
+        shares_bank:         0,
+        loan_granted:        g(d, 'loan_granted'),
+        loan_int_charged:    g(d, 'loan_int_charged'),
+        loan_repayment:      g(d, 'loan_repayment'),
+        loan_repayment_bank: g(d, 'loan_repayment_bank'),
+        loan_int_paid:       g(d, 'loan_int_paid'),
+        comm_add:            g(d, 'comm_add'),
+        comm_repayment:      g(d, 'comm_repayment'),
+        comm_repayment_bank: g(d, 'comm_repayment_bank'),
+        form:                g(d, 'form'),
+        other_charges:       g(d, 'other_charges'),
+        total_deduction:     g(d, 'total_deduction'),
+        // C/F balances (for reference)
+        savings_cf:          g(d, 'savings_cf'),
+        loan_ledger_bal:     g(d, 'loan_ledger_bal'),
+        loan_int_cf:         g(d, 'loan_int_cf'),
+        comm_bal_cf:         g(d, 'comm_bal_cf'),
+      });
+    }
+
+    // Latest C/F for summary
+    const lastData = months.length ? (byMonth[months[months.length - 1]] || {}) : {};
+    const summary = {
+      net_savings:  lastData.savings_cf      || 0,
+      loan_bal:     lastData.loan_ledger_bal || 0,
+      int_to_pay:   lastData.loan_int_cf     || 0,
+      balance:      lastData.comm_bal_cf     || 0,
+      total_shares: sharesBF + rows.reduce((s, r) => s + r.shares, 0),
+    };
+
+    // Available years for this member
+    const yearsRes = await db.query(
+      `SELECT DISTINCT year FROM monthly_trans WHERE member_id=$1
+       UNION SELECT DISTINCT year FROM shares WHERE member_id=$1
+       ORDER BY year DESC`,
+      [memberId]
+    );
+    const availableYears = yearsRes.rows.map((r) => r.year);
+
+    res.json({ rows, bf, summary, year, availableYears });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { getMembers, getMember, createMember, updateMember, deleteMember, importCSV, importBalances, getMemberLedger };

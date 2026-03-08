@@ -2,9 +2,12 @@ import { useEffect, useState, useRef } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
+import Pagination from '../components/Pagination';
 import api from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
+
+const PAGE_SIZE = 25;
 
 const EMPTY_MEMBER = {
   ledger_no: '', staff_no: '', gifmis_no: '', full_name: '', gender: 'Male',
@@ -16,6 +19,7 @@ export default function Members() {
   const [members, setMembers] = useState([]);
   const [total, setTotal] = useState(0);
   const [search, setSearch] = useState('');
+  const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
   const [addOpen, setAddOpen] = useState(false);
   const [editMember, setEditMember] = useState(null);
@@ -46,6 +50,11 @@ export default function Members() {
     const t = setTimeout(() => load(search), 300);
     return () => clearTimeout(t);
   }, [search]);
+
+  useEffect(() => { setPage(1); }, [search]);
+
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
   const openAdd = () => { setForm(EMPTY_MEMBER); setEditMember(null); setAddOpen(true); };
   const openEdit = (m) => {
@@ -184,7 +193,7 @@ export default function Members() {
                 </tr>
               </thead>
               <tbody>
-                {members.map((m) => (
+                {pageMembers.map((m) => (
                   <tr key={m.id}>
                     <td className="td-mono td-gold">{m.ledger_no}</td>
                     <td>{m.full_name}</td>
@@ -211,6 +220,7 @@ export default function Members() {
             </table>
           </div>
         )}
+        <Pagination page={page} pageSize={PAGE_SIZE} total={members.length} onChange={(p) => { setPage(p); window.scrollTo(0, 0); }} />
       </div>
 
       {/* Add/Edit Member Modal */}
