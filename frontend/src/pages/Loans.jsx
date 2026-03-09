@@ -282,7 +282,7 @@ export default function Loans() {
             <table>
               <thead>
                 <tr>
-                  <th>Member</th><th>Ledger No</th><th>Principal</th><th>Remaining</th>
+                  <th>Member</th><th>Ledger No</th><th>Principal B/F</th><th>Remaining</th>
                   <th>Monthly Repayment</th>
                   <th>Total Interest</th><th>Monthly Interest</th><th>Interest Paid</th>
                   <th>Date Issued</th><th>Status</th><th></th>
