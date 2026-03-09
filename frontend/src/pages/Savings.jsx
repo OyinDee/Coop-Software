@@ -63,6 +63,7 @@ export default function Savings() {
   };
 
   const total = savings.reduce((s, r) => s + parseFloat(r.amount || 0), 0);
+  const totalCumulative = savings.reduce((s, r) => s + parseFloat(r.cumulative_balance || 0), 0);
   const recorded   = savings.filter(r => r.id && !r.carried_forward).length;
   const carried    = savings.filter(r => r.carried_forward).length;
   const noSavings  = savings.filter(r => r.carried_forward === null && !r.id).length;
@@ -94,9 +95,14 @@ export default function Savings() {
 
       <div className="stat-grid" style={{ gridTemplateColumns: 'repeat(4,1fr)' }}>
         <div className="stat-card green">
-          <div className="stat-label">Total Savings</div>
+          <div className="stat-label">Monthly Contributions</div>
           <div className="stat-value">{fmtNGN(total)}</div>
           <div className="stat-sub">{MONTHS[filterMonth - 1]} {filterYear}</div>
+        </div>
+        <div className="stat-card green">
+          <div className="stat-label">Total Cumulative (All Members)</div>
+          <div className="stat-value">{fmtNGN(totalCumulative)}</div>
+          <div className="stat-sub">Savings balances at {MONTHS[filterMonth - 1]} {filterYear}</div>
         </div>
         <div className="stat-card">
           <div className="stat-label">Recorded This Month</div>
@@ -120,7 +126,7 @@ export default function Savings() {
           <table>
             <thead>
               <tr>
-                <th>Ledger No</th><th>Member</th><th>Amount</th><th>Status</th><th>Description</th><th></th>
+                <th>Ledger No</th><th>Member</th><th>Monthly Amount</th><th>Cumulative Balance</th><th>Status</th><th>Description</th><th></th>
               </tr>
             </thead>
             <tbody>
@@ -133,6 +139,9 @@ export default function Savings() {
                     <td>{s.full_name}</td>
                     <td style={{ color: isEmpty ? 'var(--faint)' : 'var(--green)', fontFamily: 'var(--mono)', fontSize: 12 }}>
                       {isEmpty ? '—' : fmtNGN(s.amount)}
+                    </td>
+                    <td style={{ color: 'var(--green)', fontFamily: 'var(--mono)', fontSize: 12, fontWeight: 600 }}>
+                      {parseFloat(s.cumulative_balance || 0) > 0 ? fmtNGN(s.cumulative_balance) : '—'}
                     </td>
                     <td>
                       {isCarried
@@ -151,7 +160,7 @@ export default function Savings() {
                   </tr>
                 );
               })}
-              {savings.length === 0 && <tr><td colSpan="6" style={{ textAlign: 'center', padding: 40, color: 'var(--faint)' }}>No savings data for this period</td></tr>}
+              {savings.length === 0 && <tr><td colSpan="7" style={{ textAlign: 'center', padding: 40, color: 'var(--faint)' }}>No savings data for this period</td></tr>}
             </tbody>
           </table>
         )}

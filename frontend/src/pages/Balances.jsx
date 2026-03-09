@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Pagination from '../components/Pagination';
 import api from '../api';
@@ -39,7 +39,8 @@ export default function Balances() {
     }
   };
 
-  useEffect(() => { fetchBalances(); }, []);
+  const location = useLocation();
+  useEffect(() => { fetchBalances(); }, [location.key]);
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = members.filter((m) => {
@@ -53,23 +54,25 @@ export default function Balances() {
     );
   });
 
-  // ── Per-member row totals ─────────────────────────────────────────────────
+  // ── Per-member row totals (liabilities only — excludes savings & shares) ──
+  const ASSET_KEYS = new Set(['savings', 'shares']);
   const rows = filtered.map((m) => ({
     ...m,
-    _total: columns.reduce((s, col) => s + (parseFloat(m[col.key]) || 0), 0),
+    _total: columns.reduce((s, col) => ASSET_KEYS.has(col.key) ? s : s + (parseFloat(m[col.key]) || 0), 0),
   }));
   // Reset page on search change
   useEffect(() => { setPage(1); }, [search]);
 
   // ── Pagination slice ─────────────────────────────────────────────────────
-  const pageStart  = (page - 1) * PAGE_SIZE;
-  const pageRows   = rows.slice(pageStart, pageStart + PAGE_SIZE);
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageRows  = rows.slice(pageStart, pageStart + PAGE_SIZE);
+
   // ── Column totals ─────────────────────────────────────────────────────────
   const colTotals = columns.reduce((acc, col) => {
     acc[col.key] = filtered.reduce((s, m) => s + (parseFloat(m[col.key]) || 0), 0);
     return acc;
   }, {});
-  const grandTotal = Object.values(colTotals).reduce((s, v) => s + v, 0);
+  const grandTotal = columns.reduce((s, col) => ASSET_KEYS.has(col.key) ? s : s + (colTotals[col.key] || 0), 0);
 
   // ── CSV export (all enabled columns) ─────────────────────────────────────
   const exportCSV = () => {

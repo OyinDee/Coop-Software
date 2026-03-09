@@ -11,15 +11,15 @@ const PAGE_SIZE = 25;
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
-// Map balance-column keys → the monthly_trans column keys that hold the deduction amount
-const BAL_TO_TRANS = {
-  savings:      'savings_add',
-  loans:        'loan_repayment',
-  loan_interest:'loan_int_paid',
-  commodity:    'comm_repayment',
-  shares:       'shares',
-};
-const transKey = (key) => BAL_TO_TRANS[key] || key;
+// Keys that represent actual salary deductions (NOT balance/BF/CF tracking columns)
+// TOTAL DEDUCTION = sum of these only
+const DEDUCTION_KEYS = new Set([
+  'savings_add', 'savings_add_bank',
+  'loan_repayment', 'loan_repayment_bank',
+  'loan_int_paid', 'loan_int_paid_bank',
+  'comm_repayment', 'comm_repayment_bank',
+  'form', 'other_charges',
+]);
 
 // ── Upload CSV modal ──────────────────────────────────────────────────────────
 function UploadModal({ month, year, onDone, onClose }) {
@@ -133,6 +133,83 @@ function NarrationModal({ member, month, year, onSave, onClose }) {
   );
 }
 
+// Editable keys admins can change for a generated month (B/F values are read-only — they come from prev C/F)
+const EDITABLE_FIELDS = [
+  { key: 'savings_add',        label: 'ADD: Savings (Salary)' },
+  { key: 'savings_add_bank',   label: 'ADD: Savings (Bank)' },
+  { key: 'savings_withdrawal', label: 'LESS: Withdrawal' },
+  { key: 'loan_granted',       label: 'ADD: New Loan Granted' },
+  { key: 'loan_repayment',     label: 'LESS: Loan Repayment (Salary)' },
+  { key: 'loan_repayment_bank',label: 'LESS: Loan Repayment (Bank)' },
+  { key: 'loan_int_paid',      label: 'LESS: Loan Interest Paid (Salary)' },
+  { key: 'loan_int_paid_bank', label: 'LESS: Loan Interest Paid (Bank)' },
+  { key: 'comm_add',           label: 'ADD: New Commodity' },
+  { key: 'comm_repayment',     label: 'LESS: Commodity Repayment (Salary)' },
+  { key: 'comm_repayment_bank',label: 'LESS: Commodity Repayment (Bank)' },
+  { key: 'form',               label: 'Form Fee' },
+  { key: 'other_charges',      label: 'Other Charges' },
+];
+
+// ── Edit month entry modal ────────────────────────────────────────────────────
+function EditEntryModal({ member, month, year, onSave, onClose }) {
+  const toast = useToast();
+  const [values, setValues] = useState(() => {
+    const init = {};
+    for (const f of EDITABLE_FIELDS) init[f.key] = member[f.key] != null ? String(member[f.key]) : '0';
+    return init;
+  });
+  const [saving, setSaving] = useState(false);
+
+  const handleSave = async () => {
+    setSaving(true);
+    try {
+      const changes = {};
+      for (const f of EDITABLE_FIELDS) changes[f.key] = parseFloat(values[f.key]) || 0;
+      const r = await api.patch('/deductions/entry', { member_id: member.id, month, year, changes });
+      toast('Entry updated');
+      onSave(member.id, r.data.data);
+      onClose();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Save failed', 'error');
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  return (
+    <Modal title={`Edit Entry — ${member.full_name}`} onClose={onClose} width={520}>
+      <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+        {MONTHS[month - 1]} {year} &nbsp;·&nbsp; {member.ledger_no}
+        <span style={{ marginLeft: 8, color: 'var(--faint)' }}>B/F values and C/F totals are auto-calculated</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '8px 16px', marginBottom: 16 }}>
+        {EDITABLE_FIELDS.map((f) => (
+          <div className="form-group" key={f.key} style={{ margin: 0 }}>
+            <label className="form-label" style={{ fontSize: 11 }}>{f.label}</label>
+            <input
+              className="form-input"
+              type="number"
+              min="0"
+              step="0.01"
+              value={values[f.key]}
+              onChange={(e) => setValues((p) => ({ ...p, [f.key]: e.target.value }))}
+            />
+          </div>
+        ))}
+      </div>
+      <div style={{ fontSize: 11, color: 'var(--faint)', marginBottom: 12, padding: '8px 10px', background: 'rgba(200,168,75,.06)', borderRadius: 4, border: '1px solid rgba(200,168,75,.15)' }}>
+        Saving will recalculate Net Saving C/F, Loan Ledger Bal, Loan Interest C/F, and Commodity C/F automatically.
+      </div>
+      <div style={{ display: 'flex', gap: 10 }}>
+        <button className="btn btn-primary" onClick={handleSave} disabled={saving}>
+          {saving ? 'Saving…' : 'Save & Recalculate'}
+        </button>
+        <button className="btn btn-secondary" onClick={onClose}>Cancel</button>
+      </div>
+    </Modal>
+  );
+}
+
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Deductions() {
   const toast = useToast();
@@ -145,22 +222,17 @@ export default function Deductions() {
   const [hasData,  setHasData]  = useState(false);
   const [loading,  setLoading]  = useState(true);
   const [search,   setSearch]   = useState('');
-  const [editing,  setEditing]  = useState(null);
+  const [editing,  setEditing]  = useState(null);       // narration editing
+  const [editingEntry, setEditingEntry] = useState(null); // full entry editing
   const [uploading,  setUploading]  = useState(false);
   const [generating, setGenerating] = useState(false);
   const [page,       setPage]       = useState(1);
-
-  // Fetch balance-sheet columns (same source as Balances page)
-  useEffect(() => {
-    api.get('/settings/columns')
-      .then((r) => setColumns(r.data.columns.filter((c) => c.enabled)))
-      .catch(() => {});
-  }, []);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
     try {
       const r = await api.get('/deductions', { params: { month, year } });
+      setColumns(r.data.columns);  // Use columns from deductions endpoint (trans_columns)
       setMembers(r.data.members);
       setHasData(r.data.hasData);
     } catch (err) {
@@ -181,6 +253,10 @@ export default function Deductions() {
 
   const handleSavedNarration = (memberId, narration) => {
     setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, narration } : m));
+  };
+
+  const handleSavedEntry = (memberId, newData) => {
+    setMembers((prev) => prev.map((m) => m.id === memberId ? { ...m, ...newData } : m));
   };
 
   // Generate next month from a given source month
@@ -218,8 +294,21 @@ export default function Deductions() {
   // Reset to page 1 when search changes (effect)
   useEffect(() => { setPage(1); }, [search]);
 
+  // Columns to display in table (exclude total_deduction — it has its own dedicated column)
+  const displayColumns = columns.filter((c) => c.key !== 'total_deduction');
+
+  // Compute TOTAL DEDUCTION for a row: use stored value if present, else sum deduction keys only
+  const rowTotal = (m) => {
+    const stored = parseFloat(m.total_deduction);
+    if (!isNaN(stored) && stored > 0) return stored;
+    return displayColumns.reduce((s, c) => {
+      if (!DEDUCTION_KEYS.has(c.key)) return s;
+      return s + (parseFloat(m[c.key]) || 0);
+    }, 0);
+  };
+
   // ── Column totals (over all filtered, not just page) ──────────────────────
-  const tot = (key) => filtered.reduce((s, m) => s + (parseFloat(m[transKey(key)]) || 0), 0);
+  const tot = (key) => filtered.reduce((s, m) => s + (parseFloat(m[key]) || 0), 0);
 
   // ── Pagination slice ──────────────────────────────────────────────────────
   const pageStart = (page - 1) * PAGE_SIZE;
@@ -228,7 +317,7 @@ export default function Deductions() {
   // ── CSV export ────────────────────────────────────────────────────────────
   const exportCSV = () => {
     const headers = ['S/N', 'MONTH', 'L/No', 'NAME', 'STAFF No',
-      ...columns.map((c) => c.label.toUpperCase()), 'NARRATION'];
+      ...displayColumns.map((c) => c.label.toUpperCase()), 'NARRATION', 'TOTAL DEDUCTION'];
     const monthLabel = `${MONTHS[month - 1].toUpperCase()}, ${year}`;
     const body = filtered.map((m, i) => [
       i + 1,
@@ -236,16 +325,18 @@ export default function Deductions() {
       m.ledger_no,
       `"${m.full_name}"`,
       m.staff_no || '',
-      ...columns.map((c) => {
-        const v = parseFloat(m[transKey(c.key)]);
+      ...displayColumns.map((c) => {
+        const v = parseFloat(m[c.key]);
         return isNaN(v) ? '0.00' : v.toFixed(2);
       }),
       `"${m.narration || ''}"`,
+      rowTotal(m).toFixed(2),
     ]);
     // Totals row
     body.push(['', '', '', 'TOTAL', '',
-      ...columns.map((c) => tot(c.key).toFixed(2)),
+      ...displayColumns.map((c) => tot(c.key).toFixed(2)),
       '',
+      filtered.reduce((s, m) => s + rowTotal(m), 0).toFixed(2),
     ]);
     const csv = [headers, ...body].map((r) => r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
@@ -338,23 +429,24 @@ export default function Deductions() {
                 <th style={{ minWidth: 110 }}>L/No</th>
                 <th style={{ minWidth: 210 }}>Name</th>
                 <th style={{ minWidth: 100 }}>Staff No</th>
-                {columns.map((c) => (
+                {displayColumns.map((c) => (
                   <th key={c.key} style={{ minWidth: 130, textAlign: 'right' }}>{c.label}</th>
                 ))}
                 <th style={{ minWidth: 180 }}>Narration</th>
                 <th style={{ minWidth: 140, textAlign: 'right' }}>TOTAL DEDUCTION</th>
+                <th style={{ minWidth: 60 }}></th>
               </tr>
             </thead>
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={columns.length + 7} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
+                  <td colSpan={displayColumns.length + 6} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                     Loading…
                   </td>
                 </tr>
               ) : !hasData ? (
                 <tr>
-                  <td colSpan={columns.length + 7} style={{ textAlign: 'center', padding: 60 }}>
+                  <td colSpan={displayColumns.length + 6} style={{ textAlign: 'center', padding: 60 }}>
                     <div style={{ color: 'var(--muted)', marginBottom: 16, fontSize: 14 }}>
                       No data for {MONTHS[month - 1]} {year}.
                     </div>
@@ -378,7 +470,7 @@ export default function Deductions() {
                 </tr>
               ) : filtered.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 7} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
+                  <td colSpan={displayColumns.length + 6} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                     No members match your search.
                   </td>
                 </tr>
@@ -393,8 +485,8 @@ export default function Deductions() {
                     </td>
                     <td style={{ fontWeight: 500 }}>{m.full_name}</td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{m.staff_no || '—'}</td>
-                    {columns.map((c) => {
-                      const v = parseFloat(m[transKey(c.key)]);
+                    {displayColumns.map((c) => {
+                      const v = parseFloat(m[c.key]);
                       return (
                         <td key={c.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
                           {v === null || v === undefined || isNaN(v)
@@ -412,11 +504,17 @@ export default function Deductions() {
                     </td>
                     <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13, fontWeight: 600, color: 'var(--gold)' }}>
                       {(() => {
-                        const stored = parseFloat(m.total_deduction);
-                        if (!isNaN(stored) && stored > 0) return fmtNGN(stored);
-                        const computed = columns.reduce((s, c) => s + (parseFloat(m[transKey(c.key)]) || 0), 0);
-                        return computed > 0 ? fmtNGN(computed) : <span style={{ color: 'var(--faint)' }}>—</span>;
+                        const t = rowTotal(m);
+                        return t > 0 ? fmtNGN(t) : <span style={{ color: 'var(--faint)' }}>—</span>;
                       })()}
+                    </td>
+                    <td style={{ textAlign: 'center' }}>
+                      <button
+                        className="btn btn-ghost btn-sm"
+                        style={{ fontSize: 11, padding: '2px 8px' }}
+                        title="Edit this member's entry"
+                        onClick={() => setEditingEntry(m)}
+                      >Edit</button>
                     </td>
                   </tr>
                 ))
@@ -427,19 +525,16 @@ export default function Deductions() {
               <tfoot>
                 <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border)' }}>
                   <td colSpan={4} style={{ textAlign: 'right', fontSize: 11, letterSpacing: 1 }}>TOTALS</td>
-                  {columns.map((c) => (
+                  {displayColumns.map((c) => (
                     <td key={c.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
                       {fmtNGN(tot(c.key))}
                     </td>
                   ))}
                   <td />
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--gold)', fontWeight: 700 }}>
-                    {fmtNGN(filtered.reduce((s, m) => {
-                      const stored = parseFloat(m.total_deduction);
-                      if (!isNaN(stored) && stored > 0) return s + stored;
-                      return s + columns.reduce((cs, c) => cs + (parseFloat(m[transKey(c.key)]) || 0), 0);
-                    }, 0))}
+                    {fmtNGN(filtered.reduce((s, m) => s + rowTotal(m), 0))}
                   </td>
+                  <td />
                 </tr>
               </tfoot>
             )}
@@ -464,6 +559,16 @@ export default function Deductions() {
           year={year}
           onSave={handleSavedNarration}
           onClose={() => setEditing(null)}
+        />
+      )}
+
+      {editingEntry && (
+        <EditEntryModal
+          member={editingEntry}
+          month={month}
+          year={year}
+          onSave={handleSavedEntry}
+          onClose={() => setEditingEntry(null)}
         />
       )}
     </Layout>

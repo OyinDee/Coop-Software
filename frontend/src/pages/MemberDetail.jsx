@@ -11,7 +11,7 @@ const MONTH_LABELS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct
 
 // â”€â”€ Ledger table cell â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 function Amt({ v, red, amber, green, muted }) {
-  if (v === 0) return <span style={{ color: 'var(--faint)', fontFamily: 'var(--mono)', fontSize: 11 }}>â€”</span>;
+  if (v === 0) return <span style={{ color: 'var(--faint)', fontFamily: 'var(--mono)', fontSize: 11 }}>—</span>;
   const color = red ? 'var(--red)' : amber ? 'var(--amber)' : green ? '#3cb371' : muted ? 'var(--muted)' : 'var(--text)';
   return <span style={{ fontFamily: 'var(--mono)', fontSize: 11, color }}>{fmtNGN(v)}</span>;
 }
@@ -24,12 +24,16 @@ export default function MemberDetail() {
   const [data, setData] = useState(null);
   const [loading, setLoading] = useState(true);
   const [loanOpen, setLoanOpen] = useState(false);
-  const [loanForm, setLoanForm] = useState(LOAN_FORM);
+  const [loanForm, setLoanForm] = useState({ ...LOAN_FORM, month: new Date().getMonth() + 1, year: new Date().getFullYear() });
   const [preview, setPreview] = useState(null);
   const [saving, setSaving] = useState(false);
   const [editOpen, setEditOpen] = useState(false);
   const [editForm, setEditForm] = useState({});
   const [loanRate, setLoanRate] = useState(0.05);
+  const [savingsOpen, setSavingsOpen] = useState(false);
+  const [savingsForm, setSavingsForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '' });
+  const [commOpen, setCommOpen] = useState(false);
+  const [commForm, setCommForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
 
   // Ledger state
   const [ledger, setLedger]       = useState(null);
@@ -77,11 +81,35 @@ export default function MemberDetail() {
         principal: loanForm.principal,
         months: loanForm.months || undefined,
         monthly_payment: loanForm.monthly_payment || undefined,
+        month: loanForm.month,
+        year: loanForm.year,
       });
-      toast('Loan added'); setLoanOpen(false); setLoanForm(LOAN_FORM); load();
+      toast('Loan added'); setLoanOpen(false); setLoanForm({ ...LOAN_FORM, month: new Date().getMonth() + 1, year: new Date().getFullYear() }); load(); loadLedger(ledgerYear);
     } catch (err) {
       toast(err.response?.data?.error || 'Error adding loan', 'error');
     } finally { setSaving(false); }
+  };
+
+  const handleAddSavings = async (e) => {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.post('/savings', { member_id: id, ...savingsForm });
+      toast('Savings recorded'); setSavingsOpen(false);
+      setSavingsForm({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '' });
+      load(); loadLedger(ledgerYear);
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
+  };
+
+  const handleAddCommodity = async (e) => {
+    e.preventDefault(); setSaving(true);
+    try {
+      await api.post('/commodity', { member_id: id, ...commForm });
+      toast('Commodity recorded'); setCommOpen(false);
+      setCommForm({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
+      load(); loadLedger(ledgerYear);
+    } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
+    finally { setSaving(false); }
   };
 
   const handleDeleteLoan = async (loanId) => {
@@ -157,7 +185,7 @@ export default function MemberDetail() {
     URL.revokeObjectURL(a.href);
   };
 
-  if (loading) return <Layout title="Personal Ledger"><div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>Loadingâ€¦</div></Layout>;
+  if (loading) return <Layout title="Personal Ledger"><div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>Loading...</div></Layout>;
 
   const member = data?.member;
   const loans = data?.loans || [];
@@ -240,13 +268,25 @@ export default function MemberDetail() {
       actions={
         <>
           <button className="btn btn-ghost btn-sm" style={{ padding: '4px 10px', fontSize: 9, letterSpacing: .5 }} onClick={() => navigate('/members')}>
-            â† Members
+            ← Members
           </button>
           <button className="btn btn-ghost btn-sm" onClick={exportLedgerCSV}>
             <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
               <polyline points="21 15 21 19 3 19 3 15" /><line x1="12" y1="3" x2="12" y2="15" /><polyline points="7 8 12 3 17 8" />
             </svg>
             Export CSV
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setSavingsOpen(true)}>
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Savings
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={() => setCommOpen(true)}>
+            <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+              <line x1="12" y1="5" x2="12" y2="19" /><line x1="5" y1="12" x2="19" y2="12" />
+            </svg>
+            Add Commodity
           </button>
           <button className="btn btn-primary btn-sm" onClick={() => setLoanOpen(true)}>
             <svg width="11" height="11" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
@@ -311,7 +351,7 @@ export default function MemberDetail() {
         </div>
 
         {ledgerLoading ? (
-          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading ledgerâ€¦</div>
+          <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading ledger…</div>
         ) : (
           <div style={{ overflowX: 'auto' }}>
             <table style={{ borderCollapse: 'collapse', width: '100%', fontSize: 11 }}>
@@ -357,7 +397,7 @@ export default function MemberDetail() {
                     <td key={c.key} style={tdStyle}>
                       {BF_MAP[c.key] != null && BF_MAP[c.key] !== 0
                         ? <Amt v={BF_MAP[c.key]} {...c} />
-                        : <span style={{ color: 'var(--faint)' }}>â€”</span>}
+                        : <span style={{ color: 'var(--faint)' }}>--</span>}
                     </td>
                   ))}
                 </tr>
@@ -484,8 +524,8 @@ export default function MemberDetail() {
             <table>
               <thead>
                 <tr>
-                  <th>Loan #</th><th>Principal</th><th>Remaining</th>
-                  <th>Paid</th><th>Monthly Repayment</th><th>Total Interest ({displayRatePct}%)</th>
+                  <th>Loan #</th><th>Opening Balance</th><th>Remaining</th>
+                  <th>Repaid Since Entry</th><th>Monthly Repayment</th><th>Total Interest ({displayRatePct}%)</th>
                   <th>Monthly Interest</th><th>Interest Paid</th><th>Status</th><th></th>
                 </tr>
               </thead>
@@ -510,7 +550,7 @@ export default function MemberDetail() {
                         {l.status === 'active' && (
                           <button className="btn btn-ghost btn-sm" onClick={() => handleRepayment(l.id)}>Repay</button>
                         )}
-                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteLoan(l.id)}>âœ•</button>
+                        <button className="btn btn-danger btn-sm" onClick={() => handleDeleteLoan(l.id)}>X</button>
                       </div>
                     </td>
                   </tr>
@@ -524,7 +564,7 @@ export default function MemberDetail() {
                   const r = l.interest_rate != null ? parseFloat(l.interest_rate) * 100 : 5;
                   return (
                     <span key={l.id}>
-                      Loan {i + 1} â€” <strong>{fmtNGN(l.total_interest)}</strong> ({r}% of {fmtNGN(l.principal)} over {l.months} months = {fmtNGN(l.monthly_interest)}/mo)
+                      Loan {i + 1} <strong>{fmtNGN(l.total_interest)}</strong> ({r}% of {fmtNGN(l.principal)} = {fmtNGN(l.monthly_interest)}/mo)
                       {i < activeLoans.length - 1 ? ' + ' : ' '}
                     </span>
                   );
@@ -541,17 +581,17 @@ export default function MemberDetail() {
       <div className="card">
         <div className="card-title">Member Details</div>
         <div className="details-grid">
-          <div className="detail-item"><div className="di-label">Email</div><div className="di-val">{member.email || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Phone</div><div className="di-val">{member.phone || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Gender</div><div className="di-val">{member.gender || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Marital Status</div><div className="di-val">{member.marital_status || 'â€”'}</div></div>
+          <div className="detail-item"><div className="di-label">Email</div><div className="di-val">{member.email || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Phone</div><div className="di-val">{member.phone || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Gender</div><div className="di-val">{member.gender || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Marital Status</div><div className="di-val">{member.marital_status || ''}</div></div>
           <div className="detail-item"><div className="di-label">Admission Date</div><div className="di-val">{fmtDate(member.date_of_admission)}</div></div>
-          <div className="detail-item"><div className="di-label">Department</div><div className="di-val">{member.department || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Next of Kin</div><div className="di-val">{member.next_of_kin || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Relation</div><div className="di-val">{member.next_of_kin_relation || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">GIFMIS No</div><div className="di-val td-mono" style={{ fontSize: 12 }}>{member.gifmis_no || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Bank</div><div className="di-val">{member.bank || 'â€”'}</div></div>
-          <div className="detail-item"><div className="di-label">Account No</div><div className="di-val td-mono">{member.account_number || 'â€”'}</div></div>
+          <div className="detail-item"><div className="di-label">Department</div><div className="di-val">{member.department || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Next of Kin</div><div className="di-val">{member.next_of_kin || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Relation</div><div className="di-val">{member.next_of_kin_relation || ''}</div></div>
+          <div className="detail-item"><div className="di-label">GIFMIS No</div><div className="di-val td-mono" style={{ fontSize: 12 }}>{member.gifmis_no || ''}</div></div>
+          <div className="detail-item"><div className="di-label">Bank</div><div className="di-val">{member.bank || ' '}</div></div>
+          <div className="detail-item"><div className="di-label">Account No</div><div className="di-val td-mono">{member.account_number || ' '}</div></div>
         </div>
       </div>
 
@@ -568,7 +608,7 @@ export default function MemberDetail() {
                 onChange={(e) => setLoanForm({ ...loanForm, principal: e.target.value, monthly_payment: '' })} required />
             </div>
             <div style={{ fontFamily: 'var(--mono)', fontSize: 9, letterSpacing: 1.5, color: 'var(--faint)', marginBottom: 14 }}>
-              ENTER EITHER MONTHS OR MONTHLY PAYMENT â€” NOT BOTH
+              ENTER EITHER MONTHS OR MONTHLY PAYMENT; NOT BOTH
             </div>
             <div className="form-row" style={{ alignItems: 'flex-start' }}>
               <div className="form-group">
@@ -584,19 +624,100 @@ export default function MemberDetail() {
                   style={{ opacity: loanForm.months ? .5 : 1 }} />
               </div>
             </div>
-            {preview && (
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Issued Month</label>
+                <select className="form-input" value={loanForm.month} onChange={(e) => setLoanForm({ ...loanForm, month: Number(e.target.value) })}>
+                  {MONTH_LABELS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Issued Year</label>
+                <input className="form-input" type="number" value={loanForm.year} onChange={(e) => setLoanForm({ ...loanForm, year: Number(e.target.value) })} />
+              </div>
+            </div>
+            {preview && preview.months > 0 && (
               <div className="preview-box">
+                <div className="preview-item"><div className="pi-label">Months</div><div className="pi-val">{preview.months}</div></div>
                 <div className="preview-item"><div className="pi-label">Monthly Repayment</div><div className="pi-val gold">{fmtNGN(preview.monthly_repayment)}</div></div>
-                <div className="preview-item"><div className="pi-label">Monthly Interest</div><div className="pi-val amber">{fmtNGN(preview.monthly_interest)}</div></div>
-                <div className="preview-item"><div className="pi-label">Total Interest ({displayRatePct}%)</div><div className="pi-val amber">{fmtNGN(preview.total_interest)}</div></div>
+                <div className="preview-item"><div className="pi-label">Monthly Interest ({displayRatePct}%)</div><div className="pi-val amber">{fmtNGN(preview.monthly_interest)}</div></div>
+                <div className="preview-item"><div className="pi-label">Total Interest</div><div className="pi-val amber">{fmtNGN(preview.total_interest)}</div></div>
                 <div className="preview-item"><div className="pi-label">Total Payable</div><div className="pi-val">{fmtNGN(preview.total_payable)}</div></div>
               </div>
             )}
             <div className="modal-footer">
               <button type="button" className="btn btn-ghost" onClick={() => setLoanOpen(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saving || !preview}>
-                {saving ? 'Addingâ€¦' : 'Add Loan'}
+                {saving ? 'Adding...' : 'Add Loan'}
               </button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Add Savings Modal */}
+      {savingsOpen && (
+        <Modal title="Add Savings" onClose={() => setSavingsOpen(false)}>
+          <form onSubmit={handleAddSavings}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Month</label>
+                <select className="form-input" value={savingsForm.month} onChange={(e) => setSavingsForm({ ...savingsForm, month: Number(e.target.value) })}>
+                  {MONTH_LABELS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Year</label>
+                <input className="form-input" type="number" value={savingsForm.year} onChange={(e) => setSavingsForm({ ...savingsForm, year: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Amount (₦) *</label>
+              <input className="form-input" type="number" step="0.01" placeholder="e.g. 5000" value={savingsForm.amount} onChange={(e) => setSavingsForm({ ...savingsForm, amount: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input className="form-input" placeholder="e.g. Salary deduction" value={savingsForm.description} onChange={(e) => setSavingsForm({ ...savingsForm, description: e.target.value })} />
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setSavingsOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add Savings'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Add Commodity Modal */}
+      {commOpen && (
+        <Modal title="Add Commodity / Gadget" onClose={() => setCommOpen(false)}>
+          <form onSubmit={handleAddCommodity}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Month</label>
+                <select className="form-input" value={commForm.month} onChange={(e) => setCommForm({ ...commForm, month: Number(e.target.value) })}>
+                  {MONTH_LABELS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Year</label>
+                <input className="form-input" type="number" value={commForm.year} onChange={(e) => setCommForm({ ...commForm, year: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Amount (₦) *</label>
+              <input className="form-input" type="number" step="0.01" placeholder="Total commodity / gadget cost" value={commForm.amount} onChange={(e) => setCommForm({ ...commForm, amount: e.target.value })} required />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Monthly Repayment (₦)</label>
+              <input className="form-input" type="number" step="0.01" placeholder="How much deducted per month" value={commForm.monthly_repayment} onChange={(e) => setCommForm({ ...commForm, monthly_repayment: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input className="form-input" placeholder="e.g. Laptop, Phone" value={commForm.description} onChange={(e) => setCommForm({ ...commForm, description: e.target.value })} />
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setCommOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add Commodity'}</button>
             </div>
           </form>
         </Modal>
@@ -662,7 +783,7 @@ export default function MemberDetail() {
             </div>
             <div className="modal-footer">
               <button type="button" className="btn btn-ghost" onClick={() => setEditOpen(false)}>Cancel</button>
-              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Savingâ€¦' : 'Save Changes'}</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</button>
             </div>
           </form>
         </Modal>

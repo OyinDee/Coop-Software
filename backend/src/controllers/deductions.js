@@ -22,6 +22,117 @@ function parseAmount(val) {
   return parseFloat(String(val).replace(/[,"]/g, '').trim()) || 0;
 }
 
+// ── Alias map: all known label variations → canonical column key ──────────────
+// Handles different spacing, punctuation and abbreviations in uploaded CSVs.
+const LABEL_ALIASES = {
+  // SAVINGS
+  'savings b/f':                                  'savings_bf',
+  'savings bf':                                   'savings_bf',
+  'savings b f':                                  'savings_bf',
+  'add savings during the month':                 'savings_add',
+  'add: savings during the month':                'savings_add',
+  'add savings during the month (bank)':          'savings_add_bank',
+  'add: savings during the month (bank)':         'savings_add_bank',
+  'less withdrawal':                              'savings_withdrawal',
+  'less: withdrawal':                             'savings_withdrawal',
+  'net saving c/f':                               'savings_cf',
+  'net savings c/f':                              'savings_cf',
+  'savings c/f':                                  'savings_cf',
+  'savings cf':                                   'savings_cf',
+
+  // LOAN PRINCIPAL
+  'loan prin. bal. b/f':                          'loan_bal_bf',
+  'loan principal balance b/f':                   'loan_bal_bf',
+  'loan prin bal b/f':                            'loan_bal_bf',
+  'loan bal b/f':                                 'loan_bal_bf',
+  'loan bal bf':                                  'loan_bal_bf',
+  'loan b/f':                                     'loan_bal_bf',
+  'add loan granted this month (auto)':           'loan_granted',
+  'add: loan granted this month (auto)':          'loan_granted',
+  'add: loan granted this month':                 'loan_granted',
+  'loan granted this month':                      'loan_granted',
+  'less loan principal repayment':                'loan_repayment',
+  'less: loan principal repayment':               'loan_repayment',
+  'loan principal repayment':                     'loan_repayment',
+  'loan repayment':                               'loan_repayment',
+  'less loan principal repayment (bank)':         'loan_repayment_bank',
+  'less: loan principal repayment (bank)':        'loan_repayment_bank',
+  'loan repayment (bank)':                        'loan_repayment_bank',
+  'loan ledger bal.':                             'loan_ledger_bal',
+  'loan ledger bal':                              'loan_ledger_bal',
+  'loan ledger balance':                          'loan_ledger_bal',
+
+  // LOAN INTEREST
+  'loan interest balance b/f':                   'loan_int_bf',
+  'loan int balance b/f':                        'loan_int_bf',
+  'loan int b/f':                                'loan_int_bf',
+  'loan interest b/f':                           'loan_int_bf',
+  'add interest charged on loan granted this month':       'loan_int_charged',
+  'add:interest charged on loan granted this month:':      'loan_int_charged',
+  'add: interest charged on loan granted this month:':     'loan_int_charged',
+  'interest charged on loan granted this month':           'loan_int_charged',
+  'loan int charged':                            'loan_int_charged',
+  'less loan interest paid this month':          'loan_int_paid',
+  'less: loan interest paid this month':         'loan_int_paid',
+  'loan interest paid this month':               'loan_int_paid',
+  'loan int paid':                               'loan_int_paid',
+  'ln int paid':                                 'loan_int_paid',
+  'less loan interest paid (bank)':              'loan_int_paid_bank',
+  'less: loan interest paid  (bank)':            'loan_int_paid_bank',
+  'less: loan interest paid (bank)':             'loan_int_paid_bank',
+  'loan interest paid (bank)':                   'loan_int_paid_bank',
+  'loan interest balance c/f':                   'loan_int_cf',
+  'loan int balance c/f':                        'loan_int_cf',
+  'loan int c/f':                                'loan_int_cf',
+  'loan interest c/f':                           'loan_int_cf',
+  'loan int cf':                                 'loan_int_cf',
+
+  // COMMODITY
+  'commodity sales bal. b/f':                    'comm_bal_bf',
+  'commodity sales bal b/f':                     'comm_bal_bf',
+  'comm. sales bal. b/f':                        'comm_bal_bf',
+  'comm sales bal b/f':                          'comm_bal_bf',
+  'commodity bal. b/f':                          'comm_bal_bf',
+  'commodity b/f':                               'comm_bal_bf',
+  'add comm. sales during the month':            'comm_add',
+  'add: comm. sales during the month':           'comm_add',
+  'commodity sales during the month':            'comm_add',
+  'comm sales during the month':                 'comm_add',
+  'less commodity sales repayment':              'comm_repayment',
+  'less: commodity sales repayment':             'comm_repayment',
+  'less: commodity sales repayment ':            'comm_repayment',
+  'commodity sales repayment':                   'comm_repayment',
+  'comm repayment':                              'comm_repayment',
+  'less commodity sales repayment (bank)':       'comm_repayment_bank',
+  'less: comm. sales repay. (bank)':             'comm_repayment_bank',
+  'less: commodity sales repay. (bank)':         'comm_repayment_bank',
+  'comm. sales repay. (bank)':                   'comm_repayment_bank',
+  'comm. sales bal. c/f':                        'comm_bal_cf',
+  'comm. sales bal. c/f':                        'comm_bal_cf',
+  'commodity sales bal. c/f':                    'comm_bal_cf',
+  'comm sales bal c/f':                          'comm_bal_cf',
+  'commodity c/f':                               'comm_bal_cf',
+
+  // OTHER DEDUCTIONS
+  'form':                                        'form',
+  'form fee':                                    'form',
+  'other charges':                               'other_charges',
+  'other charge':                                'other_charges',
+  'total deduction':                             'total_deduction',
+  'total deductions':                            'total_deduction',
+};
+
+// Resolve a CSV header label to a canonical key, checking aliases first
+function resolveKey(label, labelToKey) {
+  const norm = normalizeLabel(label);
+  // 1. Check alias table (covers all known Excel header variants)
+  if (LABEL_ALIASES[norm]) return LABEL_ALIASES[norm];
+  // 2. Check existing trans_columns by label
+  if (labelToKey[norm]) return labelToKey[norm];
+  // 3. Fall back to auto-generated key from label
+  return null;
+}
+
 // ── Get enabled trans columns ─────────────────────────────────────────────────
 async function getTransColumns(req, res) {
   try {
@@ -97,7 +208,9 @@ async function uploadTransCSV(req, res) {
     for (let i = 0; i < headerRow.length; i++) {
       const h = headerRow[i];
       if (!h || IDENTITY_HEADERS.has(normalizeLabel(h))) continue;
-      let colKey = labelToKey[normalizeLabel(h)];
+
+      // Try alias resolution first, then DB lookup, then auto-generate
+      let colKey = resolveKey(h, labelToKey);
       if (!colKey) {
         colKey = makeKey(h).slice(0, 150) || `col_${i}`;
         newColInserts.ledgers.push(colKey);
@@ -438,25 +551,43 @@ async function generateNextMonth(req, res) {
         const form                 = g(prev, 'form');
         const other_charges        = g(prev, 'other_charges');
 
-        // Interest charged on opening loan balance for this month
-        const loan_int_charged = loan_bal_bf > 0
-          ? Math.round(loan_bal_bf * interestRate * 100) / 100
+        // Interest is flat-rate, calculated once when loan is issued.
+        // Only charge new interest if a new loan was granted this month (loan_granted > 0).
+        const loan_int_charged = loan_granted > 0
+          ? Math.round(loan_granted * interestRate * 100) / 100
           : 0;
 
-        // C/F recalculations
-        const savings_cf     = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
-        const loan_ledger_bal = Math.max(0, loan_bal_bf + loan_granted - loan_repayment - loan_repayment_bank);
-        const loan_int_cf    = Math.max(0, loan_int_bf + loan_int_charged - loan_int_paid - loan_int_paid_bank);
-        const comm_bal_cf    = Math.max(0, comm_bal_bf + comm_add - comm_repayment - comm_repayment_bank);
+        // ── Cap repayments at remaining balances so payments stop when cleared ──
 
-        // Total salary deduction (bank-paid portions excluded)
-        const total_deduction = savings_add + loan_repayment + loan_int_paid + comm_repayment + form + other_charges;
+        // Loan principal: stop deducting once loan_ledger_bal reaches 0
+        const loan_balance_before = loan_bal_bf + loan_granted;
+        const eff_loan_repayment      = loan_balance_before > 0 ? Math.min(loan_repayment,      loan_balance_before) : 0;
+        const eff_loan_repayment_bank = loan_balance_before > 0 ? Math.min(loan_repayment_bank, Math.max(0, loan_balance_before - eff_loan_repayment)) : 0;
+
+        // Loan interest: stop deducting once loan_int_cf reaches 0
+        const int_balance_before = loan_int_bf + loan_int_charged;
+        const eff_loan_int_paid      = int_balance_before > 0 ? Math.min(loan_int_paid,      int_balance_before) : 0;
+        const eff_loan_int_paid_bank = int_balance_before > 0 ? Math.min(loan_int_paid_bank, Math.max(0, int_balance_before - eff_loan_int_paid)) : 0;
+
+        // Commodity: stop deducting once comm_bal_cf reaches 0
+        const comm_balance_before = comm_bal_bf + comm_add;
+        const eff_comm_repayment      = comm_balance_before > 0 ? Math.min(comm_repayment,      comm_balance_before) : 0;
+        const eff_comm_repayment_bank = comm_balance_before > 0 ? Math.min(comm_repayment_bank, Math.max(0, comm_balance_before - eff_comm_repayment)) : 0;
+
+        // C/F recalculations
+        const savings_cf      = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
+        const loan_ledger_bal = Math.max(0, loan_balance_before - eff_loan_repayment - eff_loan_repayment_bank);
+        const loan_int_cf     = Math.max(0, int_balance_before - eff_loan_int_paid - eff_loan_int_paid_bank);
+        const comm_bal_cf     = Math.max(0, comm_balance_before - eff_comm_repayment - eff_comm_repayment_bank);
+
+        // Total salary deduction (bank-paid portions excluded from salary deduction total)
+        const total_deduction = savings_add + eff_loan_repayment + eff_loan_int_paid + eff_comm_repayment + form + other_charges;
 
         const newData = {
           savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
-          loan_bal_bf, loan_granted, loan_repayment, loan_repayment_bank, loan_ledger_bal,
-          loan_int_bf, loan_int_charged, loan_int_paid, loan_int_paid_bank, loan_int_cf,
-          comm_bal_bf, comm_add, comm_repayment, comm_repayment_bank, comm_bal_cf,
+          loan_bal_bf, loan_granted, loan_repayment: eff_loan_repayment, loan_repayment_bank: eff_loan_repayment_bank, loan_ledger_bal,
+          loan_int_bf, loan_int_charged, loan_int_paid: eff_loan_int_paid, loan_int_paid_bank: eff_loan_int_paid_bank, loan_int_cf,
+          comm_bal_bf, comm_add, comm_repayment: eff_comm_repayment, comm_repayment_bank: eff_comm_repayment_bank, comm_bal_cf,
           form, other_charges, total_deduction,
         };
 
@@ -488,4 +619,107 @@ async function generateNextMonth(req, res) {
   }
 }
 
-module.exports = { getDeductions, upsertDeductions, uploadTransCSV, getTransColumns, updateTransColumn, generateNextMonth };
+// ── Patch a single member's entry for a month ─────────────────────────────────
+// Admin can update any column value (savings_add, loan_granted, comm_add, etc.)
+// and the system recalculates all C/F figures automatically.
+async function patchMonthEntry(req, res) {
+  const { member_id, month, year, changes } = req.body;
+  // changes = { savings_add: 5000, loan_granted: 200000, ... }
+  if (!member_id || !month || !year || !changes || typeof changes !== 'object') {
+    return res.status(400).json({ error: 'member_id, month, year, and changes object are required' });
+  }
+
+  const m = parseInt(month);
+  const y = parseInt(year);
+
+  const client = await db.getClient();
+  try {
+    await client.query('BEGIN');
+
+    // Load all existing data for this member/month
+    const existing = await client.query(
+      'SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3',
+      [member_id, m, y]
+    );
+    const data = {};
+    for (const r of existing.rows) data[r.column_key] = parseFloat(r.amount) || 0;
+
+    // Apply the changes
+    for (const [key, val] of Object.entries(changes)) {
+      data[key] = parseFloat(val) || 0;
+    }
+
+    const g = (k) => data[k] || 0;
+
+    // Recalculate all C/F values from the updated inputs
+    const savings_bf         = g('savings_bf');
+    const savings_add        = g('savings_add');
+    const savings_add_bank   = g('savings_add_bank');
+    const savings_withdrawal = g('savings_withdrawal');
+    const savings_cf         = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
+
+    const loan_bal_bf        = g('loan_bal_bf');
+    const loan_granted       = g('loan_granted');
+    const loan_balance_before = loan_bal_bf + loan_granted;
+    const loan_repayment_raw  = g('loan_repayment');
+    const loan_repayment_bank_raw = g('loan_repayment_bank');
+    const loan_repayment      = loan_balance_before > 0 ? Math.min(loan_repayment_raw,      loan_balance_before) : 0;
+    const loan_repayment_bank = loan_balance_before > 0 ? Math.min(loan_repayment_bank_raw, Math.max(0, loan_balance_before - loan_repayment)) : 0;
+    const loan_ledger_bal     = Math.max(0, loan_balance_before - loan_repayment - loan_repayment_bank);
+
+    // Interest: charge on new loans only (flat-rate model)
+    const loan_int_bf         = g('loan_int_bf');
+    const loan_int_charged    = loan_granted > 0
+      ? (() => {
+          // fetch interest rate from settings at runtime
+          return data['loan_int_charged'] || 0; // keep existing if no new loan
+        })()
+      : g('loan_int_charged');
+    const int_balance_before  = loan_int_bf + loan_int_charged;
+    const loan_int_paid_raw   = g('loan_int_paid');
+    const loan_int_paid_bank_raw = g('loan_int_paid_bank');
+    const loan_int_paid       = int_balance_before > 0 ? Math.min(loan_int_paid_raw,      int_balance_before) : 0;
+    const loan_int_paid_bank  = int_balance_before > 0 ? Math.min(loan_int_paid_bank_raw, Math.max(0, int_balance_before - loan_int_paid)) : 0;
+    const loan_int_cf         = Math.max(0, int_balance_before - loan_int_paid - loan_int_paid_bank);
+
+    const comm_bal_bf         = g('comm_bal_bf');
+    const comm_add            = g('comm_add');
+    const comm_balance_before = comm_bal_bf + comm_add;
+    const comm_repayment_raw  = g('comm_repayment');
+    const comm_repayment_bank_raw = g('comm_repayment_bank');
+    const comm_repayment      = comm_balance_before > 0 ? Math.min(comm_repayment_raw,      comm_balance_before) : 0;
+    const comm_repayment_bank = comm_balance_before > 0 ? Math.min(comm_repayment_bank_raw, Math.max(0, comm_balance_before - comm_repayment)) : 0;
+    const comm_bal_cf         = Math.max(0, comm_balance_before - comm_repayment - comm_repayment_bank);
+
+    const form          = g('form');
+    const other_charges = g('other_charges');
+    const total_deduction = savings_add + loan_repayment + loan_int_paid + comm_repayment + form + other_charges;
+
+    const finalData = {
+      savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
+      loan_bal_bf, loan_granted, loan_repayment, loan_repayment_bank, loan_ledger_bal,
+      loan_int_bf, loan_int_charged, loan_int_paid, loan_int_paid_bank, loan_int_cf,
+      comm_bal_bf, comm_add, comm_repayment, comm_repayment_bank, comm_bal_cf,
+      form, other_charges, total_deduction,
+    };
+
+    for (const [key, amount] of Object.entries(finalData)) {
+      await client.query(`
+        INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+        VALUES ($1, $2, $3, $4, $5)
+        ON CONFLICT (member_id, column_key, month, year)
+        DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
+      `, [member_id, key, amount, m, y]);
+    }
+
+    await client.query('COMMIT');
+    res.json({ message: 'Entry updated and recalculated', data: finalData });
+  } catch (err) {
+    await client.query('ROLLBACK');
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+module.exports = { getDeductions, upsertDeductions, uploadTransCSV, getTransColumns, updateTransColumn, generateNextMonth, patchMonthEntry };
