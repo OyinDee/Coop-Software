@@ -32,7 +32,13 @@ async function getTransactions(req, res) {
           ELSE NULL
         END AS savings_carried,
         COALESCE(sh.amount, 0) AS shares,
-        COALESCE(c.amount, 0)  AS commodity,
+        COALESCE(
+          (SELECT mt.amount FROM monthly_trans mt
+           WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+             AND mt.column_key = 'comm_add' LIMIT 1),
+          c.amount,
+          0
+        ) AS commodity,
         -- Loan principal: smart-capped — last month pays only the true remainder
         COALESCE((
           SELECT SUM(
@@ -137,7 +143,17 @@ async function getMonthlyReport(req, res) {
           AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
           AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
       `, [m, y]),
-      db.query('SELECT COALESCE(SUM(amount),0) as total FROM commodity WHERE month=$1 AND year=$2', [m, y]),
+      db.query(`
+        SELECT COALESCE(
+          (SELECT SUM(mt.amount) FROM monthly_trans mt
+           JOIN members mem2 ON mem2.id = mt.member_id AND mem2.is_active = TRUE
+           WHERE mt.column_key = 'comm_add' AND mt.month = $1 AND mt.year = $2),
+          (SELECT SUM(c.amount) FROM commodity c
+           JOIN members mem2 ON mem2.id = c.member_id AND mem2.is_active = TRUE
+           WHERE c.month = $1 AND c.year = $2),
+          0
+        ) as total
+      `, [m, y]),
     ]);
 
     res.json({

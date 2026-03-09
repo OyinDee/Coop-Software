@@ -421,7 +421,7 @@ export default function Deductions() {
           </div>
         )}
 
-        <div style={{ overflowX: 'auto' }}>
+        <div style={{ overflowX: 'auto', overflowY: 'auto', maxHeight: 'calc(100vh - 300px)' }}>
           <table className="data-table">
             <thead>
               <tr>

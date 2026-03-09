@@ -159,6 +159,61 @@ async function updateTransColumn(req, res) {
   }
 }
 
+// Sync a loan repayment entry into loan_repayments + update loans balance.
+// Called after CSV upload or month generation so loan tracking stays current.
+async function syncLoanRepayment(client, memberId, month, year, principalPaid, interestPaid, description) {
+  if (principalPaid <= 0 && interestPaid <= 0) return;
+  const loanRes = await client.query(
+    "SELECT id, remaining_balance, interest_paid AS int_paid, months_paid FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
+    [memberId]
+  );
+  if (!loanRes.rows.length) return;
+  const loan = loanRes.rows[0];
+  // Prevent duplicate entries for the same loan/month/year
+  const dup = await client.query(
+    'SELECT id FROM loan_repayments WHERE loan_id=$1 AND month=$2 AND year=$3',
+    [loan.id, month, year]
+  );
+  if (dup.rows.length) return;
+  await client.query(
+    'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [loan.id, memberId, principalPaid, interestPaid, month, year, description || null]
+  );
+  const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalPaid);
+  const newStatus  = newBalance <= 0 ? 'cleared' : 'active';
+  await client.query(
+    'UPDATE loans SET remaining_balance=$1, interest_paid=interest_paid+$2, months_paid=months_paid+1, status=$3, updated_at=NOW() WHERE id=$4',
+    [newBalance, interestPaid, newStatus, loan.id]
+  );
+}
+
+// Canonical labels + sort orders for all known column keys
+const CANONICAL_LABELS = {
+  savings_bf:           { label: 'Savings B/F',                              sort: 1  },
+  savings_add:          { label: 'ADD: Savings (Salary)',                    sort: 2  },
+  savings_add_bank:     { label: 'ADD: Savings (Bank)',                      sort: 3  },
+  savings_withdrawal:   { label: 'LESS: Withdrawal',                         sort: 4  },
+  savings_cf:           { label: 'Net Saving C/F',                           sort: 5  },
+  loan_bal_bf:          { label: 'Loan Prin. Bal. B/F',                      sort: 6  },
+  loan_granted:         { label: 'ADD: Loan Granted this Month',             sort: 7  },
+  loan_repayment:       { label: 'LESS: Loan Principal Repayment',           sort: 8  },
+  loan_repayment_bank:  { label: 'LESS: Loan Principal Repayment (Bank)',    sort: 9  },
+  loan_ledger_bal:      { label: 'Loan Ledger Bal.',                         sort: 10 },
+  loan_int_bf:          { label: 'Loan Interest Balance B/F',                sort: 11 },
+  loan_int_charged:     { label: 'ADD: Interest Charged',                    sort: 12 },
+  loan_int_paid:        { label: 'LESS: Loan Interest Paid',                 sort: 13 },
+  loan_int_paid_bank:   { label: 'LESS: Loan Interest Paid (Bank)',          sort: 14 },
+  loan_int_cf:          { label: 'Loan Interest Balance C/F',                sort: 15 },
+  comm_bal_bf:          { label: 'Commodity Sales Bal. B/F',                 sort: 16 },
+  comm_add:             { label: 'ADD: Comm. Sales During the Month',        sort: 17 },
+  comm_repayment:       { label: 'LESS: Commodity Sales Repayment',          sort: 18 },
+  comm_repayment_bank:  { label: 'LESS: Comm. Sales Repay. (Bank)',          sort: 19 },
+  comm_bal_cf:          { label: 'Comm. Sales Bal. C/F',                     sort: 20 },
+  form:                 { label: 'Form',                                      sort: 21 },
+  other_charges:        { label: 'Other Charges',                            sort: 22 },
+  total_deduction:      { label: 'Total Deduction',                          sort: 23 },
+};
+
 // ── CSV Upload: parse + store all columns per member per month ────────────────
 async function uploadTransCSV(req, res) {
   const { month, year } = req.body;
@@ -217,6 +272,14 @@ async function uploadTransCSV(req, res) {
         newColInserts.labels.push(h);
         newColInserts.sorts.push(i);
         labelToKey[normalizeLabel(h)] = colKey;
+      } else {
+        // Canonical key resolved via LABEL_ALIASES — still register in trans_columns
+        const canonMeta = CANONICAL_LABELS[colKey];
+        if (canonMeta) {
+          newColInserts.ledgers.push(colKey);
+          newColInserts.labels.push(canonMeta.label);
+          newColInserts.sorts.push(canonMeta.sort);
+        }
       }
       financialCols.push({ idx: i, key: colKey });
     }
@@ -304,6 +367,8 @@ async function uploadTransCSV(req, res) {
       let unmatched = 0;
       const unmatchedRows = [];
 
+      const loanSyncMap = new Map(); // memberId -> { principal_paid, interest_paid }
+
       for (const dr of dataRows) {
         const memberId = dr.existId ||
                          byLedger.get(dr.lNoVal.toLowerCase()) ||
@@ -312,11 +377,21 @@ async function uploadTransCSV(req, res) {
 
         for (const col of financialCols) {
           const raw = col.idx < dr.row.length ? dr.row[col.idx] : '';
+          const amt = parseAmount(raw);
           tMemberIds.push(memberId);
           tColKeys.push(col.key);
-          tAmounts.push(parseAmount(raw));
+          tAmounts.push(amt);
           tMonths.push(m);
           tYears.push(y);
+          if (col.key === 'loan_repayment' || col.key === 'loan_repayment_bank') {
+            const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
+            e.principal_paid += amt;
+            loanSyncMap.set(memberId, e);
+          } else if (col.key === 'loan_int_paid' || col.key === 'loan_int_paid_bank') {
+            const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
+            e.interest_paid += amt;
+            loanSyncMap.set(memberId, e);
+          }
         }
         matched++;
       }
@@ -330,6 +405,11 @@ async function uploadTransCSV(req, res) {
            DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()`,
           [tMemberIds, tColKeys, tAmounts, tMonths, tYears]
         );
+      }
+
+      // Sync loan repayments from CSV data into loan tracking tables
+      for (const [memberId, { principal_paid, interest_paid }] of loanSyncMap) {
+        await syncLoanRepayment(client, memberId, m, y, principal_paid, interest_paid, null);
       }
 
       await client.query('COMMIT');
@@ -529,6 +609,7 @@ async function generateNextMonth(req, res) {
         await client.query('DELETE FROM monthly_trans WHERE month=$1 AND year=$2', [tgtMonth, tgtYear]);
       }
 
+      const loanSyncs = [];
       for (const [memberId, prev] of Object.entries(memberData)) {
         // B/F values come from previous month's C/F
         const savings_bf           = g(prev, 'savings_cf');
@@ -599,7 +680,19 @@ async function generateNextMonth(req, res) {
             DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
           `, [memberId, key, amount, tgtMonth, tgtYear]);
         }
+        if (eff_loan_repayment + eff_loan_repayment_bank > 0 || eff_loan_int_paid + eff_loan_int_paid_bank > 0) {
+          loanSyncs.push({
+            memberId:      parseInt(memberId),
+            principal_paid: eff_loan_repayment + eff_loan_repayment_bank,
+            interest_paid:  eff_loan_int_paid  + eff_loan_int_paid_bank,
+          });
+        }
         generated++;
+      }
+
+      // Sync generated repayments into loan tracking tables
+      for (const { memberId, principal_paid, interest_paid } of loanSyncs) {
+        await syncLoanRepayment(client, memberId, tgtMonth, tgtYear, principal_paid, interest_paid, 'Auto-generated');
       }
 
       await client.query('COMMIT');

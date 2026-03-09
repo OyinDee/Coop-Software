@@ -90,7 +90,7 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
             padding: '12px 14px', marginBottom: 20, border: '1px solid var(--border)',
           }}>
             {[
-              { label: 'Principal',     value: fmtNGN(loan.principal) },
+              { label: 'Opening Bal.',    value: fmtNGN(loan.principal) },
               { label: 'Remaining',     value: fmtNGN(loan.remaining_balance), red: true },
               { label: 'Monthly (Sched.)', value: fmtNGN(scheduledRepayment) },
               { label: 'Status',        value: loan.status === 'active' ? 'Active' : 'Cleared',
@@ -130,7 +130,7 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
                 {useCustom && (
                   <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
                     <div className="form-group" style={{ margin: 0, flex: 1 }}>
-                      <label className="form-label">Principal Paid (₦)</label>
+                      <label className="form-label">Repayment Amount (₦)</label>
                       <input className="form-input" type="number" min="0" step="0.01"
                         value={principalAmt} onChange={(e) => setPrincipalAmt(e.target.value)} required />
                     </div>
@@ -144,7 +144,7 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
 
                 {!useCustom && (
                   <div className="info-box" style={{ marginBottom: 12, fontSize: 12 }}>
-                    Will deduct scheduled amounts: <strong>{fmtNGN(loan.monthly_principal)}</strong> principal
+                    Will deduct scheduled amounts: <strong>{fmtNGN(loan.monthly_principal)}</strong> repayment
                     + <strong>{fmtNGN(loan.monthly_interest)}</strong> interest.
                   </div>
                 )}
@@ -179,7 +179,7 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
                 <thead>
                   <tr>
                     <th>Period</th>
-                    <th style={{ textAlign: 'right' }}>Principal</th>
+                    <th style={{ textAlign: 'right' }}>Repayment</th>
                     <th style={{ textAlign: 'right' }}>Interest</th>
                     <th style={{ textAlign: 'right' }}>Total</th>
                     <th>Description</th>
