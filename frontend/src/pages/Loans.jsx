@@ -53,7 +53,10 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
         year:  repYear,
         description: description || undefined,
       };
-      if (useCustom) {
+      if (loan?.status === 'cleared') {
+        // Interest-only payment
+        payload.interest_paid = parseFloat(interestAmt) || 0;
+      } else if (useCustom) {
         payload.principal_paid = parseFloat(principalAmt) || 0;
         payload.interest_paid  = parseFloat(interestAmt)  || 0;
       }
@@ -104,9 +107,11 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
           </div>
 
           {/* Record new repayment */}
-          {loan.status === 'active' && (
+          {(loan.status === 'active' || parseFloat(loan.interest_paid) < parseFloat(loan.total_interest)) && (
             <div style={{ border: '1px solid var(--border)', borderRadius: 6, padding: '14px 16px', marginBottom: 20 }}>
-              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>Record Repayment</div>
+              <div style={{ fontWeight: 600, fontSize: 13, marginBottom: 12 }}>
+                {loan.status === 'cleared' ? 'Record Interest Payment' : 'Record Repayment'}
+              </div>
               <form onSubmit={handleRecord}>
                 <div style={{ display: 'flex', gap: 10, marginBottom: 12, flexWrap: 'wrap' }}>
                   <div className="form-group" style={{ margin: 0, flex: 1, minWidth: 120 }}>
@@ -122,31 +127,48 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
                   </div>
                 </div>
 
-                <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>
-                  <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} />
-                  Use custom amount (different from scheduled)
-                </label>
-
-                {useCustom && (
-                  <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
-                    <div className="form-group" style={{ margin: 0, flex: 1 }}>
-                      <label className="form-label">Repayment Amount (₦)</label>
-                      <input className="form-input" type="number" min="0" step="0.01"
-                        value={principalAmt} onChange={(e) => setPrincipalAmt(e.target.value)} required />
+                {loan.status === 'cleared' ? (
+                  // Interest-only form for cleared loans
+                  <>
+                    <div className="info-box" style={{ marginBottom: 12, fontSize: 12 }}>
+                      Principal is fully repaid. Recording interest payment only.
+                      Remaining interest: <strong>{fmtNGN(parseFloat(loan.total_interest) - parseFloat(loan.interest_paid))}</strong>
                     </div>
-                    <div className="form-group" style={{ margin: 0, flex: 1 }}>
+                    <div className="form-group" style={{ margin: 0, marginBottom: 12 }}>
                       <label className="form-label">Interest Paid (₦)</label>
                       <input className="form-input" type="number" min="0" step="0.01"
                         value={interestAmt} onChange={(e) => setInterestAmt(e.target.value)} required />
                     </div>
-                  </div>
-                )}
+                  </>
+                ) : (
+                  <>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, marginBottom: 12, cursor: 'pointer' }}>
+                      <input type="checkbox" checked={useCustom} onChange={(e) => setUseCustom(e.target.checked)} />
+                      Use custom amount (different from scheduled)
+                    </label>
 
-                {!useCustom && (
-                  <div className="info-box" style={{ marginBottom: 12, fontSize: 12 }}>
-                    Will deduct scheduled amounts: <strong>{fmtNGN(loan.monthly_principal)}</strong> repayment
-                    + <strong>{fmtNGN(loan.monthly_interest)}</strong> interest.
-                  </div>
+                    {useCustom && (
+                      <div style={{ display: 'flex', gap: 10, marginBottom: 12 }}>
+                        <div className="form-group" style={{ margin: 0, flex: 1 }}>
+                          <label className="form-label">Repayment Amount (₦)</label>
+                          <input className="form-input" type="number" min="0" step="0.01"
+                            value={principalAmt} onChange={(e) => setPrincipalAmt(e.target.value)} required />
+                        </div>
+                        <div className="form-group" style={{ margin: 0, flex: 1 }}>
+                          <label className="form-label">Interest Paid (₦)</label>
+                          <input className="form-input" type="number" min="0" step="0.01"
+                            value={interestAmt} onChange={(e) => setInterestAmt(e.target.value)} required />
+                        </div>
+                      </div>
+                    )}
+
+                    {!useCustom && (
+                      <div className="info-box" style={{ marginBottom: 12, fontSize: 12 }}>
+                        Will deduct scheduled amounts: <strong>{fmtNGN(loan.monthly_principal)}</strong> repayment
+                        + <strong>{fmtNGN(loan.monthly_interest)}</strong> interest.
+                      </div>
+                    )}
+                  </>
                 )}
 
                 <div className="form-group" style={{ margin: 0 }}>
@@ -300,7 +322,9 @@ export default function Loans() {
                     <td className="td-amber">{fmtNGN(l.monthly_interest)}</td>
                     <td className="td-green">{fmtNGN(l.interest_paid)}</td>
                     <td className="td-muted" style={{ fontSize: 11 }}>{fmtDate(l.date_issued)}</td>
-                    <td><span className="badge badge-amber">Active</span></td>
+                    <td><span className={`badge badge-${l.status === 'active' ? 'amber' : 'red'}`}>
+                      {l.status === 'active' ? 'Active' : 'Int. Due'}
+                    </span></td>
                     <td style={{ display: 'flex', gap: 6 }}>
                       <button
                         className="btn btn-ghost btn-sm"

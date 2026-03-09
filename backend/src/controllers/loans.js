@@ -38,6 +38,7 @@ async function getLoans(req, res) {
       FROM loans l
       JOIN members m ON m.id = l.member_id
       WHERE l.status = 'active'
+        OR (l.status = 'cleared' AND l.interest_paid < l.total_interest)
       ORDER BY l.created_at DESC
     `);
     res.json({ loans: result.rows });
@@ -212,25 +213,35 @@ async function addRepayment(req, res) {
     const loanRes = await client.query('SELECT * FROM loans WHERE id=$1 FOR UPDATE', [id]);
     const loan = loanRes.rows[0];
     if (!loan) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Loan not found' }); }
-    if (loan.status !== 'active') { await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is not active' }); }
+    const interestStillOwed = parseFloat(loan.total_interest) - parseFloat(loan.interest_paid) > 0;
+    if (loan.status !== 'active' && !interestStillOwed) {
+      await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is fully settled' });
+    }
 
-    // Use provided amounts, or fall back to scheduled monthly amounts
-    const principalAmount = principal_paid !== undefined
-      ? parseFloat(principal_paid)
-      : parseFloat(loan.monthly_principal);
+    // For cleared loans, only interest payments are allowed (principal already 0)
+    const principalAmount = loan.status === 'cleared'
+      ? 0
+      : (principal_paid !== undefined ? parseFloat(principal_paid) : parseFloat(loan.monthly_principal));
     const interestAmount = interest_paid !== undefined
       ? parseFloat(interest_paid)
       : parseFloat(loan.monthly_interest);
 
     const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalAmount);
-    const newInterestPaid = parseFloat(loan.interest_paid) + interestAmount;
+    const newInterestPaid = Math.min(
+      parseFloat(loan.total_interest),
+      parseFloat(loan.interest_paid) + interestAmount
+    );
     const newMonthsPaid = loan.months_paid + 1;
+    // Keep cleared if principal already 0; flip active→cleared if principal hits 0
     const newStatus = newBalance <= 0 ? 'cleared' : 'active';
+    // Fully settled when both principal and interest are paid
+    const fullySettled = newBalance <= 0 && newInterestPaid >= parseFloat(loan.total_interest);
+    const finalStatus = fullySettled ? 'cleared' : newStatus;
 
     await client.query(`
       UPDATE loans SET remaining_balance=$1, interest_paid=$2, months_paid=$3, status=$4, updated_at=NOW()
       WHERE id=$5
-    `, [newBalance, newInterestPaid, newMonthsPaid, newStatus, id]);
+    `, [newBalance, newInterestPaid, newMonthsPaid, finalStatus, id]);
 
     await client.query(`
       INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)
@@ -238,7 +249,7 @@ async function addRepayment(req, res) {
     `, [id, loan.member_id, principalAmount, interestAmount, month, year, description || null]);
 
     await client.query('COMMIT');
-    res.json({ message: 'Repayment recorded', newBalance, newStatus });
+    res.json({ message: 'Repayment recorded', newBalance, newStatus: finalStatus });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
