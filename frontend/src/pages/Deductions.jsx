@@ -11,6 +11,8 @@ const PAGE_SIZE = 25;
 
 const MONTHS = ['January','February','March','April','May','June','July','August','September','October','November','December'];
 
+const normalizeReconKey = (value) => String(value ?? '').trim().toLowerCase();
+
 // Keys that represent actual salary deductions (NOT balance/BF/CF tracking columns)
 // TOTAL DEDUCTION = sum of these only
 const DEDUCTION_KEYS = new Set([
@@ -78,6 +80,60 @@ function UploadModal({ month, year, onDone, onClose }) {
         <div style={{ display: 'flex', gap: 10 }}>
           <button type="submit" className="btn btn-primary" disabled={uploading}>
             {uploading ? 'Uploading…' : 'Upload'}
+          </button>
+          <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
+        </div>
+      </form>
+    </Modal>
+  );
+}
+
+// ── Reconciliation Upload modal ──────────────────────────────────────────────────────────
+function ReconciliationUploadModal({ month, year, onDone, onClose }) {
+  const toast    = useToast();
+  const fileRef  = useRef(null);
+  const [uploading, setUploading] = useState(false);
+
+  const handleUpload = async (e) => {
+    e.preventDefault();
+    const file = fileRef.current?.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const form = new FormData();
+      form.append('file', file);
+      form.append('month', month);
+      form.append('year', year);
+      const r = await api.post('/deductions/reconciliation-upload', form, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+      toast(r.data.message || 'Reconciliation upload complete');
+      onDone();
+    } catch (err) {
+      toast(err.response?.data?.error || 'Reconciliation upload failed', 'error');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  return (
+    <Modal title="Upload Reconciliation CSV" onClose={onClose} width={440}>
+      <div className="info-box" style={{ marginBottom: 18, fontSize: 12 }}>
+        Upload the CSV returned from payroll with actual amounts deducted. 
+        This should have the same format: <strong>Staff No, Member Name, Total Amount</strong>.
+        The system will compare and highlight members with outstanding balances.
+      </div>
+      <form onSubmit={handleUpload}>
+        <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
+          {MONTHS[month - 1]} {year}
+        </div>
+        <div className="form-group" style={{ marginBottom: 16 }}>
+          <label className="form-label">Reconciliation CSV File</label>
+          <input ref={fileRef} className="form-input" type="file" accept=".csv" required />
+        </div>
+        <div style={{ display: 'flex', gap: 10 }}>
+          <button type="submit" className="btn btn-primary" disabled={uploading}>
+            {uploading ? 'Uploading…' : 'Upload & Reconcile'}
           </button>
           <button type="button" className="btn btn-secondary" onClick={onClose}>Cancel</button>
         </div>
@@ -225,8 +281,11 @@ export default function Deductions() {
   const [editing,  setEditing]  = useState(null);       // narration editing
   const [editingEntry, setEditingEntry] = useState(null); // full entry editing
   const [uploading,  setUploading]  = useState(false);
+  const [uploadingReconciliation, setUploadingReconciliation] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [page,       setPage]       = useState(1);
+  const [reconciliationData, setReconciliationData] = useState(null); // payroll deduction amounts
+  const [showOnlyDiscrepancies, setShowOnlyDiscrepancies] = useState(false);
 
   const fetchData = useCallback(async () => {
     setLoading(true);
@@ -235,6 +294,26 @@ export default function Deductions() {
       setColumns(r.data.columns);  // Use columns from deductions endpoint (trans_columns)
       setMembers(r.data.members);
       setHasData(r.data.hasData);
+      
+      // Load reconciliation data if it exists
+      try {
+        const reconcileR = await api.get('/deductions/reconciliation', { params: { month, year } });
+        const raw = reconcileR.data.reconciliation || null;
+        if (!raw || typeof raw !== 'object') {
+          setReconciliationData(null);
+        } else {
+          const normalized = {};
+          for (const [k, v] of Object.entries(raw)) {
+            const key = normalizeReconKey(k);
+            if (!key) continue;
+            normalized[key] = parseFloat(v) || 0;
+          }
+          setReconciliationData(normalized);
+        }
+      } catch (err) {
+        // No reconciliation data exists yet, that's fine
+        setReconciliationData(null);
+      }
     } catch (err) {
       toast(err.response?.data?.error || 'Error loading deductions', 'error');
     } finally {
@@ -248,6 +327,11 @@ export default function Deductions() {
     setUploading(false);
     setMonth(m);
     setYear(y);
+    fetchData();
+  };
+
+  const handleReconciliationUploadDone = () => {
+    setUploadingReconciliation(false);
     fetchData();
   };
 
@@ -281,31 +365,48 @@ export default function Deductions() {
   const nextMonth = month === 12 ? 1        : month + 1;
   const nextYear  = month === 12 ? year + 1 : year;
 
-  // ── Filter ────────────────────────────────────────────────────────────────
-  const filtered = members.filter((m) => {
-    if (!search) return true;
-    const q = search.toLowerCase();
-    return (
-      m.full_name?.toLowerCase().includes(q) ||
-      m.ledger_no?.toLowerCase().includes(q) ||
-      m.staff_no?.toLowerCase().includes(q)
-    );
-  });
-  // Reset to page 1 when search changes (effect)
-  useEffect(() => { setPage(1); }, [search]);
-
-  // Columns to display in table (exclude total_deduction — it has its own dedicated column)
   const displayColumns = columns.filter((c) => c.key !== 'total_deduction');
 
-  // Compute TOTAL DEDUCTION for a row: use stored value if present, else sum deduction keys only
-  const rowTotal = (m) => {
+  function rowTotal(m) {
     const stored = parseFloat(m.total_deduction);
     if (!isNaN(stored) && stored > 0) return stored;
     return displayColumns.reduce((s, c) => {
       if (!DEDUCTION_KEYS.has(c.key)) return s;
       return s + (parseFloat(m[c.key]) || 0);
     }, 0);
-  };
+  }
+
+  // ── Filter ────────────────────────────────────────────────────────────────
+  const filtered = members.filter((m) => {
+    if (!search && !showOnlyDiscrepancies) return true;
+    
+    // Search filter
+    let matchesSearch = true;
+    if (search) {
+      const q = search.toLowerCase();
+      matchesSearch = (
+        m.full_name?.toLowerCase().includes(q) ||
+        m.ledger_no?.toLowerCase().includes(q) ||
+        m.staff_no?.toLowerCase().includes(q)
+      );
+    }
+    
+    // Discrepancy filter
+    let hasDiscrepancy = true;
+    if (showOnlyDiscrepancies && reconciliationData) {
+      const expectedTotal = rowTotal(m);
+      const staffKey = normalizeReconKey(m.staff_no);
+      const actualDeducted = (staffKey && reconciliationData[staffKey] !== undefined)
+        ? reconciliationData[staffKey]
+        : 0;
+      const difference = expectedTotal - actualDeducted;
+      hasDiscrepancy = difference > 0.01;
+    }
+    
+    return matchesSearch && (!showOnlyDiscrepancies || hasDiscrepancy);
+  });
+  // Reset to page 1 when search changes (effect)
+  useEffect(() => { setPage(1); }, [search]);
 
   // ── Column totals (over all filtered, not just page) ──────────────────────
   const tot = (key) => filtered.reduce((s, m) => s + (parseFloat(m[key]) || 0), 0);
@@ -314,7 +415,27 @@ export default function Deductions() {
   const pageStart = (page - 1) * PAGE_SIZE;
   const paginated = filtered.slice(pageStart, pageStart + PAGE_SIZE);
 
-  // ── CSV export ────────────────────────────────────────────────────────────
+  // ── Reconciliation helpers ────────────────────────────────────────────────
+  const getActualDeducted = (member) => {
+    if (!reconciliationData) return null;
+    const staffKey = normalizeReconKey(member.staff_no);
+    if (!staffKey) return 0;
+    if (reconciliationData[staffKey] === undefined) return 0;
+    return reconciliationData[staffKey];
+  };
+
+  const getDiscrepancy = (member) => {
+    const actualDeducted = getActualDeducted(member);
+    if (actualDeducted === null) return null;
+    return rowTotal(member) - actualDeducted;
+  };
+
+  const hasDiscrepancy = (member) => {
+    const discrepancy = getDiscrepancy(member);
+    return discrepancy !== null && discrepancy > 0.01;
+  };
+
+  // ── CSV export (detailed) ────────────────────────────────────────────────────────────
   const exportCSV = () => {
     const headers = ['S/N', 'MONTH', 'L/No', 'NAME', 'STAFF No',
       ...displayColumns.map((c) => c.label.toUpperCase()), 'NARRATION', 'TOTAL DEDUCTION'];
@@ -343,6 +464,24 @@ export default function Deductions() {
     const a = document.createElement('a');
     a.href = URL.createObjectURL(blob);
     a.download = `deductions_${MONTHS[month - 1].toLowerCase()}_${year}.csv`;
+    a.click();
+    URL.revokeObjectURL(a.href);
+  };
+
+  // ── Reconciliation CSV export (3 columns only) ────────────────────────────────────
+  const exportReconciliationCSV = () => {
+    const headers = ['Staff No', 'Member Name', 'Total Amount'];
+    const body = members.map((m) => [
+      m.staff_no || '',
+      `"${m.full_name}"`,
+      rowTotal(m).toFixed(2),
+    ]);
+    
+    const csv = [headers, ...body].map((r) => r.join(',')).join('\n');
+    const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `reconciliation_${MONTHS[month - 1].toLowerCase()}_${year}.csv`;
     a.click();
     URL.revokeObjectURL(a.href);
   };
@@ -385,8 +524,16 @@ export default function Deductions() {
             </button>
           )}
           <button className="btn btn-secondary" onClick={exportCSV} disabled={loading || !hasData}>
-            Export CSV
+            Export Detailed CSV
           </button>
+          <button className="btn btn-primary" onClick={exportReconciliationCSV} disabled={loading || !hasData}>
+            Export Reconciliation CSV
+          </button>
+          {hasData && (
+            <button className="btn btn-secondary" onClick={() => setUploadingReconciliation(true)}>
+              Upload Reconciliation
+            </button>
+          )}
         </div>
       </div>
 
@@ -398,6 +545,23 @@ export default function Deductions() {
       }}>
         {MONTHS[month - 1].toUpperCase()} {year}
       </div>
+
+      {/* Reconciliation status banner */}
+      {reconciliationData && (
+        <div style={{
+          background: 'rgba(34, 197, 94, 0.06)', border: '1px solid rgba(34, 197, 94, 0.2)',
+          borderRadius: 4, padding: '10px 18px', marginBottom: 14,
+          fontSize: 12, color: 'var(--success)',
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span>✓ Reconciliation data uploaded</span>
+            <span style={{ color: 'var(--muted)' }}>•</span>
+            <span style={{ color: 'var(--muted)' }}>
+              {Object.keys(reconciliationData).length} members processed by payroll
+            </span>
+          </div>
+        </div>
+      )}
 
       <div className="card" style={{ padding: 0 }}>
         {!loading && hasData && (
@@ -415,6 +579,16 @@ export default function Deductions() {
             <span style={{ color: 'var(--muted)', fontSize: 12 }}>
               {filtered.length} member{filtered.length !== 1 ? 's' : ''}
             </span>
+            {reconciliationData && (
+              <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer' }}>
+                <input
+                  type="checkbox"
+                  checked={showOnlyDiscrepancies}
+                  onChange={(e) => setShowOnlyDiscrepancies(e.target.checked)}
+                />
+                Show only discrepancies
+              </label>
+            )}
             {filtered.length !== members.length && (
               <button className="btn btn-ghost btn-sm" onClick={() => setSearch('')} style={{ fontSize: 11 }}>Clear</button>
             )}
@@ -434,6 +608,12 @@ export default function Deductions() {
                 ))}
                 <th style={{ minWidth: 180 }}>Narration</th>
                 <th style={{ minWidth: 140, textAlign: 'right' }}>TOTAL DEDUCTION</th>
+                {reconciliationData && (
+                  <>
+                    <th style={{ minWidth: 120, textAlign: 'right' }}>ACTUAL DEDUCTED</th>
+                    <th style={{ minWidth: 120, textAlign: 'right' }}>OUTSTANDING</th>
+                  </>
+                )}
                 <th style={{ minWidth: 60 }}></th>
               </tr>
             </thead>
@@ -508,6 +688,24 @@ export default function Deductions() {
                         return t > 0 ? fmtNGN(t) : <span style={{ color: 'var(--faint)' }}>—</span>;
                       })()}
                     </td>
+                    {reconciliationData && (
+                      <>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
+                          {(() => {
+                            const actual = getActualDeducted(m);
+                            return actual > 0 ? fmtNGN(actual) : <span style={{ color: 'var(--faint)' }}>—</span>;
+                          })()}
+                        </td>
+                        <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
+                          {(() => {
+                            const diff = getDiscrepancy(m);
+                            if (diff === null) return <span style={{ color: 'var(--faint)' }}>—</span>;
+                            const color = diff > 0.01 ? 'var(--error)' : 'var(--success)';
+                            return <span style={{ color }}>{diff > 0 ? '+' : ''}{fmtNGN(diff)}</span>;
+                          })()}
+                        </td>
+                      </>
+                    )}
                     <td style={{ textAlign: 'center' }}>
                       <button
                         className="btn btn-ghost btn-sm"
@@ -534,6 +732,20 @@ export default function Deductions() {
                   <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', color: 'var(--gold)', fontWeight: 700 }}>
                     {fmtNGN(filtered.reduce((s, m) => s + rowTotal(m), 0))}
                   </td>
+                  {reconciliationData && (
+                    <>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                        {fmtNGN(filtered.reduce((s, m) => s + (getActualDeducted(m) || 0), 0))}
+                      </td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 700 }}>
+                        {(() => {
+                          const totalDiff = filtered.reduce((s, m) => s + (getDiscrepancy(m) || 0), 0);
+                          const color = totalDiff > 0.01 ? 'var(--error)' : 'var(--success)';
+                          return <span style={{ color }}>{totalDiff > 0 ? '+' : ''}{fmtNGN(totalDiff)}</span>;
+                        })()}
+                      </td>
+                    </>
+                  )}
                   <td />
                 </tr>
               </tfoot>
@@ -549,6 +761,15 @@ export default function Deductions() {
           year={year}
           onDone={handleUploadDone}
           onClose={() => setUploading(false)}
+        />
+      )}
+
+      {uploadingReconciliation && (
+        <ReconciliationUploadModal
+          month={month}
+          year={year}
+          onDone={handleReconciliationUploadDone}
+          onClose={() => setUploadingReconciliation(false)}
         />
       )}
 

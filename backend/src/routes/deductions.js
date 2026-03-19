@@ -3,6 +3,7 @@ const multer  = require('multer');
 const {
   getDeductions, upsertDeductions,
   uploadTransCSV, getTransColumns, updateTransColumn, generateNextMonth, patchMonthEntry,
+  uploadReconciliationCSV, getReconciliationData,
 } = require('../controllers/deductions');
 const authenticate = require('../middleware/auth');
 
@@ -14,6 +15,8 @@ const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 
 router.get('/columns',              getTransColumns);
 router.put('/columns/:key',         updateTransColumn);
 router.post('/upload',              upload.single('file'), uploadTransCSV);
+router.post('/reconciliation-upload', upload.single('file'), uploadReconciliationCSV);
+router.get('/reconciliation',       getReconciliationData);
 router.post('/generate-next-month', generateNextMonth);
 router.patch('/entry',              patchMonthEntry);   // update one member's month entry
 router.get('/',                     getDeductions);

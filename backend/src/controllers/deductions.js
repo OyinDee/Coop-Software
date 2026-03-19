@@ -533,7 +533,98 @@ const MONTH_NAMES = [
   'July','August','September','October','November','December',
 ];
 
-// ── Generate next month: C/F → next month's B/F, recurring amounts copied ────
+// ── Upload reconciliation CSV from payroll ───────────────────────────────────
+async function uploadReconciliationCSV(req, res) {
+  const { month, year } = req.body;
+  const m = parseInt(month);
+  const y = parseInt(year);
+
+  if (!m || !y || !req.file) {
+    return res.status(400).json({ error: 'file, month, and year are required' });
+  }
+
+  try {
+    const records = parse(req.file.buffer, {
+      skip_empty_lines: true,
+      trim: true,
+      relax_column_count: true,
+      bom: true,
+    });
+
+    if (records.length < 2) {
+      return res.status(400).json({ error: 'CSV is too short' });
+    }
+
+    // Expected format: Staff No, Member Name, Total Amount
+    const headerRow = records[0].map((h) => (h || '').trim().toLowerCase());
+    const staffNoIdx = headerRow.findIndex((h) => h.includes('staff'));
+    const amountIdx = headerRow.findIndex((h) => h.includes('amount') || h.includes('total'));
+
+    if (staffNoIdx === -1 || amountIdx === -1) {
+      return res.status(400).json({ error: 'CSV must have Staff No and Total Amount columns' });
+    }
+
+    // Parse reconciliation data
+    const reconciliationData = {};
+    let processed = 0;
+
+    for (let i = 1; i < records.length; i++) {
+      const row = records[i];
+      if (!row || row.length === 0) continue;
+
+      const staffNo = String(row[staffNoIdx] || '').trim();
+      const amount = parseFloat((row[amountIdx] || '').replace(/[,"]/g, '')) || 0;
+      const staffKey = staffNo.toLowerCase();
+
+      if (staffKey && !isNaN(amount)) {
+        reconciliationData[staffKey] = (reconciliationData[staffKey] || 0) + amount;
+        processed++;
+      }
+    }
+
+    // Store reconciliation data
+    await db.query(
+      `INSERT INTO reconciliation_data (month, year, data, created_at)
+       VALUES ($1, $2, $3, NOW())
+       ON CONFLICT (month, year)
+       DO UPDATE SET data = EXCLUDED.data, updated_at = NOW()`,
+      [m, y, JSON.stringify(reconciliationData)]
+    );
+
+    res.json({
+      message: `Reconciliation data uploaded for ${processed} members`,
+      processed,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// ── Get reconciliation data for a month ──────────────────────────────────────
+async function getReconciliationData(req, res) {
+  const { month, year } = req.query;
+  const m = parseInt(month) || new Date().getMonth() + 1;
+  const y = parseInt(year) || new Date().getFullYear();
+
+  try {
+    const result = await db.query(
+      'SELECT data FROM reconciliation_data WHERE month=$1 AND year=$2',
+      [m, y]
+    );
+
+    if (result.rows.length === 0) {
+      return res.status(404).json({ error: 'No reconciliation data found' });
+    }
+
+    res.json({
+      reconciliation: result.rows[0].data,
+      month: m,
+      year: y,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
 async function generateNextMonth(req, res) {
   const { fromMonth, fromYear, force } = req.body;
 
@@ -815,4 +906,14 @@ async function patchMonthEntry(req, res) {
   }
 }
 
-module.exports = { getDeductions, upsertDeductions, uploadTransCSV, getTransColumns, updateTransColumn, generateNextMonth, patchMonthEntry };
+module.exports = { 
+  getDeductions, 
+  upsertDeductions, 
+  uploadTransCSV, 
+  getTransColumns, 
+  updateTransColumn, 
+  generateNextMonth, 
+  patchMonthEntry,
+  uploadReconciliationCSV,
+  getReconciliationData
+};
