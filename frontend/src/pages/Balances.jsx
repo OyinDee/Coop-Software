@@ -19,19 +19,27 @@ export default function Balances() {
   const [search, setSearch]       = useState('');
   const [dataMonth, setDataMonth] = useState(null);
   const [dataYear,  setDataYear]  = useState(null);
+  const [viewMonth, setViewMonth] = useState(null);
+  const [viewYear, setViewYear]   = useState(null);
   const [page, setPage]           = useState(1);
 
   const MONTHS = ['January','February','March','April','May','June',
     'July','August','September','October','November','December'];
 
-  const fetchBalances = async () => {
+  const fetchBalances = async (month = null, year = null) => {
     setLoading(true);
     try {
-      const r = await api.get('/balances');
+      const params = month && year ? { month, year } : undefined;
+      const r = await api.get('/balances', params ? { params } : undefined);
       setColumns(r.data.columns);
       setMembers(r.data.members);
       setDataMonth(r.data.dataMonth || null);
       setDataYear(r.data.dataYear   || null);
+
+      if (!month && !year && r.data.dataMonth && r.data.dataYear) {
+        setViewMonth(r.data.dataMonth);
+        setViewYear(r.data.dataYear);
+      }
     } catch (err) {
       toast(err.response?.data?.error || 'Error loading balances', 'error');
     } finally {
@@ -41,6 +49,10 @@ export default function Balances() {
 
   const location = useLocation();
   useEffect(() => { fetchBalances(); }, [location.key]);
+  useEffect(() => {
+    if (!viewMonth || !viewYear) return;
+    fetchBalances(viewMonth, viewYear);
+  }, [viewMonth, viewYear]);
 
   // ── Filter ────────────────────────────────────────────────────────────────
   const filtered = members.filter((m) => {
@@ -146,6 +158,8 @@ export default function Balances() {
   };
 
   const customColCount = columns.filter((c) => c.type === 'custom').length;
+  const hasSelectedMonth = Boolean(viewMonth && viewYear);
+  const missingSelectedData = hasSelectedMonth && (!dataMonth || !dataYear);
 
   return (
     <Layout title="Member Balances">
@@ -156,6 +170,38 @@ export default function Balances() {
           <div className="page-title">Member Balances</div>
         </div>
         <div style={{ display: 'flex', gap: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+          <select
+            className="form-input"
+            style={{ width: 140 }}
+            value={viewMonth || ''}
+            onChange={(e) => setViewMonth(e.target.value ? Number(e.target.value) : null)}
+          >
+            <option value="">Month</option>
+            {MONTHS.map((mn, i) => <option key={i} value={i + 1}>{mn}</option>)}
+          </select>
+          <input
+            className="form-input"
+            type="number"
+            style={{ width: 90 }}
+            value={viewYear || ''}
+            onChange={(e) => {
+              const val = e.target.value;
+              setViewYear(val ? Number(val) : null);
+            }}
+            min="2000" max="2100"
+            placeholder="Year"
+          />
+          <button
+            className="btn btn-secondary"
+            onClick={() => {
+              setViewMonth(null);
+              setViewYear(null);
+              fetchBalances();
+            }}
+            disabled={loading}
+          >
+            Latest
+          </button>
           <button className="btn btn-secondary" onClick={downloadTemplate}>
             Download Template
           </button>
@@ -191,8 +237,10 @@ export default function Balances() {
       )}
       <div className="info-box" style={{ marginBottom: 18 }}>
         {dataMonth
-          ? <>Showing C/F balances from the latest monthly data (<strong>{MONTHS[dataMonth - 1]} {dataYear}</strong>).</>
-          : <><strong>Fixed columns</strong> are computed live from recorded transactions.</>
+          ? <>Showing C/F balances from <strong>{MONTHS[dataMonth - 1]} {dataYear}</strong>.</>
+          : missingSelectedData
+            ? <>No monthly data found for <strong>{MONTHS[viewMonth - 1]} {viewYear}</strong>. Showing live computed balances instead.</>
+            : <><strong>Fixed columns</strong> are computed live from recorded transactions.</>
         }{' '}
         <strong>Custom columns</strong> (e.g. Form Fee, Welfare) are set via CSV upload.{' '}
         {customColCount === 0 && (
