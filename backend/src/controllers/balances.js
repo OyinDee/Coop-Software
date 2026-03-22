@@ -57,21 +57,20 @@ async function getBalances(req, res) {
       shares:       null,   // no equivalent in trans CSV
     };
 
-    // ── Build members list ─────────────────────────────────────────────────
     let membersResult;
     if (useTransData) {
-      // Only members that have trans data for this month
+      // Only members that have trans data for this month — optimized for 700+ members
       membersResult = await db.query(`
-        SELECT m.id, m.ledger_no, m.staff_no, m.full_name, m.department
+        SELECT m.id, m.ledger_no, m.staff_no, m.full_name
         FROM members m
         WHERE m.is_active = TRUE
         ORDER BY m.ledger_no
       `);
     } else {
-      // Fall back to live-computed values
+      // Fall back to live-computed values — optimized query
       membersResult = await db.query(`
         SELECT
-          m.id, m.ledger_no, m.staff_no, m.full_name, m.department,
+          m.id, m.ledger_no, m.staff_no, m.full_name,
           COALESCE((SELECT SUM(s.amount)  FROM savings s  WHERE s.member_id = m.id), 0) AS savings,
           COALESCE((SELECT SUM(sh.amount) FROM shares sh  WHERE sh.member_id = m.id), 0) AS shares,
           COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loans,
@@ -132,7 +131,9 @@ async function uploadBalances(req, res) {
     const customColumns = colsResult.rows;
 
     if (!customColumns.length) {
-      return res.status(400).json({ error: 'No custom columns are configured. Add them in Settings first.' });
+      return res.status(400).json({
+        error: 'No custom columns are configured. Balances upload only updates custom balance columns. For full monthly payroll/transaction CSV, use Deductions upload.'
+      });
     }
 
     let csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');

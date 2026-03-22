@@ -6,26 +6,97 @@ db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(()
 const { parse } = require('csv-parse/sync');
 
 async function getMembers(req, res) {
-  const { search } = req.query;
+  const { search, page = 1, limit = 100 } = req.query;
+  const offset = (page - 1) * limit;
+  
   try {
-    let query = `
-      SELECT
-        m.*,
-        COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id), 0) AS total_savings,
-        COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_balance,
-        COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS interest_due,
-        (SELECT COUNT(*) FROM loans l WHERE l.member_id = m.id AND l.status = 'active') AS active_loans
-      FROM members m
-      WHERE m.is_active = TRUE
-    `;
-    const params = [];
+    let query, params;
+    
     if (search) {
-      params.push(`%${search}%`);
-      query += ` AND (m.full_name ILIKE $1 OR m.ledger_no ILIKE $1 OR m.staff_no ILIKE $1)`;
+      // Use full-text search for better performance
+      query = `
+        SELECT m.*,
+          COALESCE(s.total_savings, 0) AS total_savings,
+          COALESCE(l.loan_balance, 0) AS loan_balance,
+          COALESCE(l.interest_due, 0) AS interest_due,
+          l.active_loans
+        FROM members m
+        LEFT JOIN (
+          SELECT member_id, SUM(amount) AS total_savings
+          FROM savings GROUP BY member_id
+        ) s ON s.member_id = m.id
+        LEFT JOIN (
+          SELECT 
+            member_id, 
+            SUM(remaining_balance) AS loan_balance,
+            SUM(total_interest - interest_paid) AS interest_due,
+            COUNT(*) AS active_loans
+          FROM loans 
+          WHERE status = 'active' 
+          GROUP BY member_id
+        ) l ON l.member_id = m.id
+        WHERE m.is_active = TRUE 
+          AND (
+            to_tsvector('english', m.full_name) @@ plainto_tsquery($1)
+            OR m.ledger_no ILIKE $1
+            OR m.staff_no ILIKE $1
+            OR m.department ILIKE $1
+          )
+        ORDER BY m.ledger_no
+        LIMIT $2 OFFSET $3
+      `;
+      params = [`%${search}%`, limit, offset];
+    } else {
+      // Optimized query for paginated results without search
+      query = `
+        SELECT m.*,
+          COALESCE(s.total_savings, 0) AS total_savings,
+          COALESCE(l.loan_balance, 0) AS loan_balance,
+          COALESCE(l.interest_due, 0) AS interest_due,
+          l.active_loans
+        FROM members m
+        LEFT JOIN (
+          SELECT member_id, SUM(amount) AS total_savings
+          FROM savings GROUP BY member_id
+        ) s ON s.member_id = m.id
+        LEFT JOIN (
+          SELECT 
+            member_id, 
+            SUM(remaining_balance) AS loan_balance,
+            SUM(total_interest - interest_paid) AS interest_due,
+            COUNT(*) AS active_loans
+          FROM loans 
+          WHERE status = 'active' 
+          GROUP BY member_id
+        ) l ON l.member_id = m.id
+        WHERE m.is_active = TRUE
+        ORDER BY m.ledger_no
+        LIMIT $1 OFFSET $2
+      `;
+      params = [limit, offset];
     }
-    query += ` ORDER BY m.ledger_no`;
-    const result = await db.query(query, params);
-    res.json({ members: result.rows, total: result.rowCount });
+
+    // Get total count efficiently for pagination
+    const countQuery = search 
+      ? `SELECT COUNT(*) FROM members WHERE is_active = TRUE AND (
+           to_tsvector('english', full_name) @@ plainto_tsquery($1)
+           OR ledger_no ILIKE $1
+           OR staff_no ILIKE $1
+           OR department ILIKE $1
+         )`
+      : `SELECT COUNT(*) FROM members WHERE is_active = TRUE`;
+    
+    const [result, countResult] = await Promise.all([
+      db.query(query, params),
+      db.query(countQuery, search ? [`%${search}%`] : [])
+    ]);
+
+    res.json({ 
+      members: result.rows, 
+      total: parseInt(countResult.rows[0].count),
+      page: parseInt(page),
+      totalPages: Math.ceil(countResult.rows[0].count / limit)
+    });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
@@ -504,4 +575,51 @@ async function getMemberLedger(req, res) {
   }
 }
 
-module.exports = { getMembers, getMember, createMember, updateMember, deleteMember, importCSV, importBalances, getMemberLedger };
+// ── Get all deactivated members ──────────────────────────────────────────────
+async function getDeactivatedMembers(req, res) {
+  try {
+    const result = await db.query(`
+      SELECT
+        m.id, m.ledger_no, m.staff_no, m.full_name,
+        m.deactivation_reason, m.updated_at,
+        COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS outstanding_loan,
+        COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS outstanding_interest,
+        COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id), 0) AS total_savings
+      FROM members m
+      WHERE m.is_active = FALSE
+      ORDER BY m.updated_at DESC
+    `);
+    res.json({ deactivated: result.rows });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+// ── Reactivate a deactivated member ──────────────────────────────────────────
+async function reactivateMember(req, res) {
+  const { id } = req.params;
+  const { reason } = req.body; // optional reason why reactivating
+
+  try {
+    const result = await db.query(
+      `UPDATE members SET is_active = TRUE, deactivation_reason = NULL, updated_at = NOW()
+       WHERE id = $1 AND is_active = FALSE
+       RETURNING *`,
+      [id]
+    );
+
+    if (!result.rows[0]) {
+      return res.status(404).json({ error: 'Member not found or already active' });
+    }
+
+    res.json({ message: 'Member reactivated', member: result.rows[0] });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+module.exports = { 
+  getMembers, getMember, createMember, updateMember, deleteMember, 
+  importCSV, importBalances, getMemberLedger,
+  getDeactivatedMembers, reactivateMember
+};

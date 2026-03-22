@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import { Link, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Pagination from '../components/Pagination';
@@ -6,7 +6,7 @@ import api from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 100; // Increased for better performance with large datasets
 
 export default function Balances() {
   const toast = useToast();
@@ -48,60 +48,58 @@ export default function Balances() {
   };
 
   const location = useLocation();
-  useEffect(() => { fetchBalances(); }, [location.key]);
-  useEffect(() => {
-    if (!viewMonth || !viewYear) return;
-    fetchBalances(viewMonth, viewYear);
-  }, [viewMonth, viewYear]);
+  
+  // Only fetch when location actually changes (not on every render)
+  useEffect(() => { 
+    if (!loading) fetchBalances(); 
+  }, [location.pathname, location.search, loading]);
 
-  // ── Filter ────────────────────────────────────────────────────────────────
-  const filtered = members.filter((m) => {
+  // Only fetch when month/year actually changes
+  useEffect(() => {
+    if (!viewMonth || !viewYear || loading) return;
+    fetchBalances(viewMonth, viewYear);
+  }, [viewMonth, viewYear, loading]);
+
+  // ── Filter ────────────────────────────────────────────────────────
+  const filtered = useMemo(() => members.filter((m) => {
     if (!search) return true;
     const q = search.toLowerCase();
     return (
       m.full_name?.toLowerCase().includes(q) ||
       m.ledger_no?.toLowerCase().includes(q) ||
-      m.staff_no?.toLowerCase().includes(q) ||
-      m.department?.toLowerCase().includes(q)
+      m.staff_no?.toLowerCase().includes(q)
     );
-  });
+  }), [members, search]);
 
-  // ── Per-member row totals (liabilities only — excludes savings & shares) ──
-  const ASSET_KEYS = new Set(['savings', 'shares']);
-  const rows = filtered.map((m) => ({
-    ...m,
-    _total: columns.reduce((s, col) => ASSET_KEYS.has(col.key) ? s : s + (parseFloat(m[col.key]) || 0), 0),
-  }));
   // Reset page on search change
   useEffect(() => { setPage(1); }, [search]);
 
-  // ── Pagination slice ─────────────────────────────────────────────────────
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageRows  = rows.slice(pageStart, pageStart + PAGE_SIZE);
+  // ── Simple row filtering — no per-member totals needed ──
+  const rows = filtered;
 
-  // ── Column totals ─────────────────────────────────────────────────────────
-  const colTotals = columns.reduce((acc, col) => {
+  // ── Pagination slice ─────────────────────────────────────────────
+  const pageStart = (page - 1) * PAGE_SIZE;
+  const pageRows  = useMemo(() => rows.slice(pageStart, pageStart + PAGE_SIZE), [rows, pageStart]);
+
+  // ── Column totals ─────────────────────────────────────────────────
+  const colTotals = useMemo(() => columns.reduce((acc, col) => {
     acc[col.key] = filtered.reduce((s, m) => s + (parseFloat(m[col.key]) || 0), 0);
     return acc;
-  }, {});
-  const grandTotal = columns.reduce((s, col) => ASSET_KEYS.has(col.key) ? s : s + (colTotals[col.key] || 0), 0);
+  }, {}), [columns, filtered]);
 
   // ── CSV export (all enabled columns) ─────────────────────────────────────
   const exportCSV = () => {
-    const headers = ['S/N', 'Ledger No', 'Staff No', 'Full Name', 'Department',
-      ...columns.map((c) => c.label), 'Total'];
+    const headers = ['S/N', 'Ledger No', 'Staff No', 'Full Name',
+      ...columns.map((c) => c.label)];
     const body = rows.map((m, i) => [
       i + 1,
       m.ledger_no,
       m.staff_no || '',
       `"${m.full_name}"`,
-      `"${m.department || ''}"`,
       ...columns.map((c) => (parseFloat(m[c.key]) || 0).toFixed(2)),
-      m._total.toFixed(2),
     ]);
-    body.push(['', '', '', 'TOTAL', '',
-      ...columns.map((c) => (colTotals[c.key] || 0).toFixed(2)),
-      grandTotal.toFixed(2)]);
+    body.push(['', '', '', 'TOTAL',
+      ...columns.map((c) => (colTotals[c.key] || 0).toFixed(2))]);
     const csv = [headers, ...body].map((r) => r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -267,7 +265,7 @@ export default function Balances() {
         }}>
           <input
             className="form-input"
-            placeholder="Search by name, ledger no, department…"
+            placeholder="Search by name or ledger no…"
             value={search}
             onChange={(e) => setSearch(e.target.value)}
             style={{ maxWidth: 300 }}
@@ -284,7 +282,6 @@ export default function Balances() {
                 <th style={{ minWidth: 40 }}>#</th>
                 <th style={{ minWidth: 110 }}>Ledger No</th>
                 <th style={{ minWidth: 210 }}>Full Name</th>
-                <th style={{ minWidth: 160 }}>Department</th>
                 {columns.map((col) => (
                   <th
                     key={col.key}
@@ -297,20 +294,19 @@ export default function Balances() {
                     )}
                   </th>
                 ))}
-                <th style={{ minWidth: 140, textAlign: 'right', fontWeight: 700 }}>Total</th>
               </tr>
             </thead>
 
             <tbody>
               {loading ? (
                 <tr>
-                  <td colSpan={columns.length + 5} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
+                  <td colSpan={columns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                     Loading…
                   </td>
                 </tr>
               ) : rows.length === 0 ? (
                 <tr>
-                  <td colSpan={columns.length + 5} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
+                  <td colSpan={columns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                     {search ? 'No members match your search.' : 'No members found.'}
                   </td>
                 </tr>
@@ -324,15 +320,11 @@ export default function Balances() {
                       </Link>
                     </td>
                     <td>{m.full_name}</td>
-                    <td style={{ color: 'var(--muted)', fontSize: 13 }}>{m.department || '—'}</td>
                     {columns.map((col) => (
                       <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
                         {fmtNGN(m[col.key] || 0)}
                       </td>
                     ))}
-                    <td style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontWeight: 600 }}>
-                      {fmtNGN(m._total)}
-                    </td>
                   </tr>
                 ))
               )}
@@ -341,15 +333,12 @@ export default function Balances() {
             {!loading && rows.length > 0 && (
               <tfoot>
                 <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border)' }}>
-                  <td colSpan={4} style={{ textAlign: 'right', letterSpacing: 1, fontSize: 11 }}>TOTALS</td>
+                  <td colSpan={3} style={{ textAlign: 'right', letterSpacing: 1, fontSize: 11 }}>TOTALS</td>
                   {columns.map((col) => (
                     <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
                       {fmtNGN(colTotals[col.key] || 0)}
                     </td>
                   ))}
-                  <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
-                    {fmtNGN(grandTotal)}
-                  </td>
                 </tr>
               </tfoot>
             )}

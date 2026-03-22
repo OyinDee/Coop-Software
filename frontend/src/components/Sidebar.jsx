@@ -87,6 +87,15 @@ const NAV = [
   },
   { section: 'Admin' },
   {
+    label: 'Member Reactivation', to: '/reactivate',
+    icon: (
+      <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+        <path d="M1 4v6h6" />
+        <path d="M3.51 15a9 9 0 1114.85-5M23 10v6h-6" />
+      </svg>
+    ),
+  },
+  {
     label: 'Settings', to: '/settings',
     icon: (
       <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">

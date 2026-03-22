@@ -14,6 +14,7 @@ import Transactions from './pages/Transactions';
 import Settings from './pages/Settings';
 import Balances from './pages/Balances';
 import Deductions from './pages/Deductions';
+import MemberReactivation from './pages/MemberReactivation';
 import PWAInstallBanner from './components/PWAInstallBanner';
 
 function ProtectedRoute({ children }) {
@@ -47,6 +48,7 @@ export default function App() {
             <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
             <Route path="/balances"    element={<ProtectedRoute><Balances /></ProtectedRoute>} />
             <Route path="/deductions"  element={<ProtectedRoute><Deductions /></ProtectedRoute>} />
+            <Route path="/reactivate"  element={<ProtectedRoute><MemberReactivation /></ProtectedRoute>} />
             <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           </Routes>
           <PWAInstallBanner />

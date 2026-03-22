@@ -10,6 +10,8 @@ const {
   importCSV,
   importBalances,
   getMemberLedger,
+  getDeactivatedMembers,
+  reactivateMember,
 } = require('../controllers/members');
 const authenticate = require('../middleware/auth');
 
@@ -18,10 +20,12 @@ const router = express.Router();
 router.use(authenticate);
 
 router.get('/', getMembers);
+router.get('/deactivated', getDeactivatedMembers); // Must come before /:id
 router.get('/:id/ledger', getMemberLedger);
 router.get('/:id', getMember);
 router.post('/', createMember);
 router.put('/:id', updateMember);
+router.put('/:id/reactivate', reactivateMember);
 router.delete('/:id', deleteMember);
 router.post('/import/csv', upload.single('file'), importCSV);
 router.post('/import/balances', upload.single('file'), importBalances);

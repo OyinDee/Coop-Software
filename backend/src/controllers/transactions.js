@@ -39,13 +39,13 @@ async function getTransactions(req, res) {
           c.amount,
           0
         ) AS commodity,
-        -- Loan principal: smart-capped — last month pays only the true remainder
+        // Loan principal: calculated using diminishing balance method (remaining_balance / months_remaining)
         COALESCE((
           SELECT SUM(
             CASE
-              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
-                THEN GREATEST(l.principal - (l.months - 1) * l.monthly_principal, 0)
-              ELSE l.monthly_principal
+              WHEN l.months_remaining > 0
+                THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
+              ELSE 0
             END
           ) FROM loans l
           WHERE l.member_id = m.id
@@ -53,13 +53,13 @@ async function getTransactions(req, res) {
             AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
             AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
         ), 0) AS loan_principal_due,
-        -- Loan interest: smart-capped on the last month too
+        -- Loan interest: calculated using diminishing balance method (total_interest_remaining / months_remaining)
         COALESCE((
           SELECT SUM(
             CASE
-              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
-                THEN GREATEST(l.total_interest - (l.months - 1) * l.monthly_interest, 0)
-              ELSE l.monthly_interest
+              WHEN l.months_remaining > 0
+                THEN ROUND((l.total_interest - l.interest_paid) / GREATEST(1, l.months_remaining)::numeric, 2)
+              ELSE 0
             END
           ) FROM loans l
           WHERE l.member_id = m.id

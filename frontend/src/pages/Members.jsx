@@ -1,4 +1,4 @@
-import { useEffect, useState, useRef } from 'react';
+import { useEffect, useState, useRef, useMemo, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
@@ -7,13 +7,22 @@ import api from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
-const PAGE_SIZE = 25;
+const PAGE_SIZE = 50; // Increased page size for better performance
 
 const EMPTY_MEMBER = {
   ledger_no: '', staff_no: '', gifmis_no: '', full_name: '', gender: 'Male',
   marital_status: 'Married', phone: '', email: '', date_of_admission: '',
   bank: '', account_number: '', department: '', next_of_kin: '', next_of_kin_relation: '',
 };
+
+// Debounce function for search
+function useDebounce(callback, delay) {
+  const timeoutRef = useRef();
+  return useCallback((...args) => {
+    clearTimeout(timeoutRef.current);
+    timeoutRef.current = setTimeout(() => callback(...args), delay);
+  }, [callback, delay]);
+}
 
 export default function Members() {
   const [members, setMembers] = useState([]);
@@ -37,24 +46,37 @@ export default function Members() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  const load = (q = '') => {
+  // Debounced search function
+  const debouncedLoad = useDebounce((q = '') => {
     setLoading(true);
-    api.get('/members', { params: q ? { search: q } : {} })
+    api.get('/members', { params: q ? { search: q, limit: 1000 } : {} })
       .then((r) => { setMembers(r.data.members); setTotal(r.data.total); })
       .finally(() => setLoading(false));
-  };
+  }, 300);
 
-  useEffect(() => { load(); }, []);
+  // Memoized filtered members for better performance
+  const filteredMembers = useMemo(() => {
+    if (!search) return members;
+    const q = search.toLowerCase();
+    return members.filter(m => 
+      m.full_name?.toLowerCase().includes(q) ||
+      m.ledger_no?.toLowerCase().includes(q) ||
+      m.staff_no?.toLowerCase().includes(q) ||
+      m.department?.toLowerCase().includes(q)
+    );
+  }, [members, search]);
 
-  useEffect(() => {
-    const t = setTimeout(() => load(search), 300);
-    return () => clearTimeout(t);
+  // Paginated members
+  const pageMembers = useMemo(() => {
+    const pageStart = (page - 1) * PAGE_SIZE;
+    return filteredMembers.slice(pageStart, pageStart + PAGE_SIZE);
+  }, [filteredMembers, page]);
+
+  useEffect(() => { debouncedLoad(''); }, []);
+  useEffect(() => { 
+    debouncedLoad(search); 
+    setPage(1); 
   }, [search]);
-
-  useEffect(() => { setPage(1); }, [search]);
-
-  const pageStart = (page - 1) * PAGE_SIZE;
-  const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
   const openAdd = () => { setForm(EMPTY_MEMBER); setEditMember(null); setAddOpen(true); };
   const openEdit = (m) => {

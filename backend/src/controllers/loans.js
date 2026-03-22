@@ -34,7 +34,11 @@ async function recalcLoanTrans(client, member_id, month, year) {
 async function getLoans(req, res) {
   try {
     const result = await db.query(`
-      SELECT l.*, m.full_name, m.ledger_no
+      SELECT l.*, m.full_name, m.ledger_no,
+        CASE 
+          WHEN l.months_remaining > 0 THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
+          ELSE 0
+        END as calculated_monthly_payment
       FROM loans l
       JOIN members m ON m.id = l.member_id
       WHERE l.status = 'active'
@@ -51,7 +55,12 @@ async function getMemberLoans(req, res) {
   const { memberId } = req.params;
   try {
     const result = await db.query(
-      'SELECT * FROM loans WHERE member_id = $1 ORDER BY created_at ASC',
+      `SELECT *, 
+        CASE 
+          WHEN months_remaining > 0 THEN ROUND(remaining_balance / GREATEST(1, months_remaining)::numeric, 2)
+          ELSE 0
+        END as calculated_monthly_payment
+       FROM loans WHERE member_id = $1 ORDER BY created_at ASC`,
       [memberId]
     );
     res.json({ loans: result.rows });
@@ -101,8 +110,8 @@ async function createLoan(req, res) {
     const monthly_interest = total_interest / m;
 
     const result = await client.query(`
-      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, interest_rate, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$8,'active')
+      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, months_remaining, interest_rate, status)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$3,$8,'active')
       RETURNING *
     `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest, rate]);
 
@@ -227,6 +236,7 @@ async function addRepayment(req, res) {
       : parseFloat(loan.monthly_interest);
 
     const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalAmount);
+    const newMonthsRemaining = Math.max(0, (loan.months_remaining || loan.months) - 1);
     const newInterestPaid = Math.min(
       parseFloat(loan.total_interest),
       parseFloat(loan.interest_paid) + interestAmount
@@ -239,9 +249,9 @@ async function addRepayment(req, res) {
     const finalStatus = fullySettled ? 'cleared' : newStatus;
 
     await client.query(`
-      UPDATE loans SET remaining_balance=$1, interest_paid=$2, months_paid=$3, status=$4, updated_at=NOW()
-      WHERE id=$5
-    `, [newBalance, newInterestPaid, newMonthsPaid, finalStatus, id]);
+      UPDATE loans SET remaining_balance=$1, interest_paid=$2, months_paid=$3, months_remaining=$4, status=$5, updated_at=NOW()
+      WHERE id=$6
+    `, [newBalance, newInterestPaid, newMonthsPaid, newMonthsRemaining, finalStatus, id]);
 
     await client.query(`
       INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)

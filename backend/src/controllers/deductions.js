@@ -5,7 +5,27 @@ const { parse } = require('csv-parse/sync');
 const IDENTITY_HEADERS = new Set(['s/n', 'month', 'l/no', 'ippis no', 'name', 'staff no']);
 
 function normalizeLabel(h) {
-  return h.toLowerCase().replace(/\s+/g, ' ').trim();
+  return h.toLowerCase()
+    .replace(/\s+/g, ' ')
+    // Remove content in parentheses and brackets for better matching
+    .replace(/\s*\(.*?\)\s*/g, '')
+    .replace(/\s*\[.*?\]\s*/g, '')
+    .replace(/\s*\{.*?\}\s*/g, '')
+    .trim();
+}
+
+function canonicalizeLabel(h) {
+  return String(h || '')
+    .toLowerCase()
+    .replace(/[_-]+/g, ' ')
+    .replace(/\//g, ' ')
+    // Remove content in parentheses and brackets for better matching
+    .replace(/\s*\(.*?\)\s*/g, '')
+    .replace(/\s*\[.*?\]\s*/g, '')
+    .replace(/\s*\{.*?\}\s*/g, '')
+    .replace(/[^a-z0-9\s]/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
 }
 
 function makeKey(label) {
@@ -22,6 +42,72 @@ function parseAmount(val) {
   return parseFloat(String(val).replace(/[,"]/g, '').trim()) || 0;
 }
 
+function parseAmountCell(val) {
+  if (val === null || val === undefined) return { amount: 0, formulaError: false };
+  const text = String(val).replace(/\"/g, '').trim();
+  if (!text) return { amount: 0, formulaError: false, empty: true };
+  if (/^#(REF|VALUE|DIV\/0|N\/A|NAME\?|NUM|NULL)!?$/i.test(text)) {
+    return { amount: null, formulaError: true, empty: false };
+  }
+  return { amount: parseAmount(text), formulaError: false, empty: false };
+}
+
+function computeDerivedValue(key, amounts) {
+  const g = (k) => parseFloat(amounts[k]) || 0;
+  if (key === 'total_deduction') {
+    return g('savings_add') + g('savings_add_bank') + g('loan_repayment') + g('loan_repayment_bank') + g('loan_int_paid') + g('loan_int_paid_bank') + g('comm_repayment') + g('comm_repayment_bank') + g('form') + g('other_charges');
+  }
+  if (key === 'to_payroll') {
+    return g('total_deduction') - g('total_payment_bank');
+  }
+  if (key === 'differences') {
+    return g('total_deduction') - g('payroll_deduction');
+  }
+  return null;
+}
+
+function matchPatternKey(rawLabel) {
+  const s = canonicalizeLabel(rawLabel);
+
+  if (/^savings\s+b\s*f(\s+\w+)*$/.test(s)) return 'savings_bf';
+  if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month') && s.includes('bank')) return 'savings_add_bank';
+  if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month')) return 'savings_add';
+  if (s.includes('less') && s.includes('withdraw')) return 'savings_withdrawal';
+  if (s.includes('net') && s.includes('saving') && (s.includes('c f') || s.includes('cf'))) return 'savings_cf';
+
+  if (s.includes('loan') && s.includes('prin') && s.includes('bal') && s.includes('b') && s.includes('f')) return 'loan_bal_bf';
+  if (s.includes('add') && s.includes('loan') && s.includes('granted') && s.includes('month')) return 'loan_granted';
+  if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment') && s.includes('bank')) return 'loan_repayment_bank';
+  if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment')) return 'loan_repayment';
+  if (s.includes('loan') && s.includes('ledger') && s.includes('bal')) return 'loan_ledger_bal';
+  if (s.includes('loan') && s.includes('status')) return 'loan_status';
+  if (s.includes('ln') && s.includes('duration') && s.includes('left')) return 'ln_duration_left';
+
+  if (s.includes('loan') && s.includes('interest') && s.includes('balance') && s.includes('b') && s.includes('f')) return 'loan_int_bf';
+  if (s.includes('interest') && s.includes('charged') && s.includes('loan') && s.includes('month')) return 'loan_int_charged';
+  if (s.includes('less') && s.includes('loan') && s.includes('interest') && s.includes('paid') && s.includes('bank')) return 'loan_int_paid_bank';
+  if (s.includes('less') && s.includes('loan') && s.includes('interest') && s.includes('paid')) return 'loan_int_paid';
+  if (s.includes('loan') && s.includes('interest') && s.includes('balance') && (s.includes('c f') || s.includes('cf'))) return 'loan_int_cf';
+
+  if (s.includes('commodity') && s.includes('sales') && s.includes('bal') && s.includes('b') && s.includes('f')) return 'comm_bal_bf';
+  if (s.includes('add') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('month')) return 'comm_add';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('repay') && s.includes('bank')) return 'comm_repayment_bank';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('repay')) return 'comm_repayment';
+  if (s.includes('comm') && s.includes('sales') && s.includes('bal') && (s.includes('c f') || s.includes('cf'))) return 'comm_bal_cf';
+  if (s.includes('comm') && s.includes('status')) return 'comm_gad_status';
+  if (s.includes('com') && s.includes('gad') && s.includes('duration') && s.includes('left')) return 'com_gad_duration_left';
+
+  if (s === 'form' || s.includes('form fee')) return 'form';
+  if (s.includes('other') && s.includes('charge')) return 'other_charges';
+  if (s.includes('total') && s.includes('deduction')) return 'total_deduction';
+  if (s.includes('total') && s.includes('payment') && s.includes('bank')) return 'total_payment_bank';
+  if (s.includes('to') && s.includes('payroll')) return 'to_payroll';
+  if (s.includes('payroll') && s.includes('deduction')) return 'payroll_deduction';
+  if (s.includes('difference')) return 'differences';
+
+  return null;
+}
+
 // ── Alias map: all known label variations → canonical column key ──────────────
 // Handles different spacing, punctuation and abbreviations in uploaded CSVs.
 const LABEL_ALIASES = {
@@ -31,8 +117,16 @@ const LABEL_ALIASES = {
   'savings b f':                                  'savings_bf',
   'add savings during the month':                 'savings_add',
   'add: savings during the month':                'savings_add',
+  'add sav during the month':                     'savings_add',
+  'add: sav during the month':                    'savings_add',
+  'add sav. during the month':                    'savings_add',
+  'add: sav. during the month':                   'savings_add',
   'add savings during the month (bank)':          'savings_add_bank',
   'add: savings during the month (bank)':         'savings_add_bank',
+  'add sav during the month (bank)':              'savings_add_bank',
+  'add: sav during the month (bank)':             'savings_add_bank',
+  'add sav. during the month (bank)':             'savings_add_bank',
+  'add: sav. during the month (bank)':            'savings_add_bank',
   'less withdrawal':                              'savings_withdrawal',
   'less: withdrawal':                             'savings_withdrawal',
   'net saving c/f':                               'savings_cf',
@@ -77,9 +171,13 @@ const LABEL_ALIASES = {
   'loan interest paid this month':               'loan_int_paid',
   'loan int paid':                               'loan_int_paid',
   'ln int paid':                                 'loan_int_paid',
+  'less: loan interest paid':                     'loan_int_paid',
+  'less loan interest paid':                      'loan_int_paid',
+  'loan interest paid':                           'loan_int_paid',
   'less loan interest paid (bank)':              'loan_int_paid_bank',
   'less: loan interest paid  (bank)':            'loan_int_paid_bank',
   'less: loan interest paid (bank)':             'loan_int_paid_bank',
+  'less: loan interest paid ( bank)':            'loan_int_paid_bank',
   'loan interest paid (bank)':                   'loan_int_paid_bank',
   'loan interest balance c/f':                   'loan_int_cf',
   'loan int balance c/f':                        'loan_int_cf',
@@ -118,6 +216,14 @@ const LABEL_ALIASES = {
   'form fee':                                    'form',
   'other charges':                               'other_charges',
   'other charge':                                'other_charges',
+  'total payment (bank)':                        'total_payment_bank',
+  'to payroll':                                  'to_payroll',
+  'from payroll payroll deduction':              'payroll_deduction',
+  '(from payroll) payroll deduction':            'payroll_deduction',
+  'payroll deduction':                           'payroll_deduction',
+  'differences':                                 'differences',
+  'differences (if not 0.00 adjust)':            'differences',
+  'difference':                                  'differences',
   'total deduction':                             'total_deduction',
   'total deductions':                            'total_deduction',
 };
@@ -125,17 +231,25 @@ const LABEL_ALIASES = {
 // Resolve a CSV header label to a canonical key, checking aliases first
 function resolveKey(label, labelToKey) {
   const norm = normalizeLabel(label);
+  const canon = canonicalizeLabel(label);
   // 1. Check alias table (covers all known Excel header variants)
   if (LABEL_ALIASES[norm]) return LABEL_ALIASES[norm];
+  if (LABEL_ALIASES[canon]) return LABEL_ALIASES[canon];
   // 2. Check existing trans_columns by label
   if (labelToKey[norm]) return labelToKey[norm];
+  if (labelToKey[canon]) return labelToKey[canon];
+  // 3. Pattern matching for highly specific/verbose headers
+  const patternKey = matchPatternKey(label);
+  if (patternKey) return patternKey;
   // 3. Fall back to auto-generated key from label
   return null;
 }
 
-// ── Get enabled trans columns ─────────────────────────────────────────────────
+// ── Get enabled trans columns with caching ─────────────────────────────────────────
 async function getTransColumns(req, res) {
   try {
+    // Add cache control headers
+    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
     const r = await db.query('SELECT * FROM trans_columns ORDER BY sort_order, id');
     res.json({ columns: r.rows });
   } catch (err) {
@@ -159,31 +273,58 @@ async function updateTransColumn(req, res) {
   }
 }
 
-// Sync a loan repayment entry into loan_repayments + update loans balance.
 // Called after CSV upload or month generation so loan tracking stays current.
 async function syncLoanRepayment(client, memberId, month, year, principalPaid, interestPaid, description) {
-  if (principalPaid <= 0 && interestPaid <= 0) return;
+  if (principalPaid <= 0 && interestPaid <= 0) {
+    // No repayment made - apply penalty
+    const loanRes = await client.query(
+      "SELECT id, remaining_balance, total_interest, interest_paid AS int_paid, months_paid, months_remaining FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
+      [memberId]
+    );
+    if (!loanRes.rows.length) return;
+    
+    const loan = loanRes.rows[0];
+    
+    // Get penalty percentage from settings (default 10%)
+    const penaltyRateRes = await client.query("SELECT value FROM app_settings WHERE key='loan_penalty_rate'");
+    const penaltyRate = parseFloat(penaltyRateRes.rows[0]?.value || '10') / 100;
+    
+    // Calculate penalty: 10% of remaining interest only
+    const remainingInterest = parseFloat(loan.total_interest) - parseFloat(loan.int_paid);
+    const penaltyAmount = remainingInterest * penaltyRate;
+    
+    // Add penalty to loan balance and distribute over remaining months
+    const newBalance = parseFloat(loan.remaining_balance) + penaltyAmount;
+    const newMonthsRemaining = Math.max(0, parseInt(loan.months_remaining || 0));
+    
+    // Update loan with penalty and new balance
+    await client.query(
+      'UPDATE loans SET remaining_balance=$1, total_interest=total_interest+$2, months_remaining=$3, updated_at=NOW() WHERE id=$4',
+      [newBalance, penaltyAmount, newMonthsRemaining, loan.id]
+    );
+    
+    // Add penalty as a loan repayment entry for tracking
+    await client.query(
+      'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+      [loan.id, memberId, 0, penaltyAmount, month, year, `Penalty for unpaid month (${(penaltyRate * 100)}% of remaining interest)`]
+    );
+    
+    return;
+  }
+  
+  // Original logic for when repayment is made
   const loanRes = await client.query(
-    "SELECT id, remaining_balance, interest_paid AS int_paid, months_paid FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
+    "SELECT id, remaining_balance, interest_paid AS int_paid, months_paid, months_remaining FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
     [memberId]
   );
   if (!loanRes.rows.length) return;
   const loan = loanRes.rows[0];
-  // Prevent duplicate entries for the same loan/month/year
-  const dup = await client.query(
-    'SELECT id FROM loan_repayments WHERE loan_id=$1 AND month=$2 AND year=$3',
-    [loan.id, month, year]
-  );
-  if (dup.rows.length) return;
-  await client.query(
-    'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-    [loan.id, memberId, principalPaid, interestPaid, month, year, description || null]
-  );
   const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalPaid);
+  const newMonthsRemaining = Math.max(0, parseInt(loan.months_remaining || 0) - 1);
   const newStatus  = newBalance <= 0 ? 'cleared' : 'active';
   await client.query(
-    'UPDATE loans SET remaining_balance=$1, interest_paid=interest_paid+$2, months_paid=months_paid+1, status=$3, updated_at=NOW() WHERE id=$4',
-    [newBalance, interestPaid, newStatus, loan.id]
+    'UPDATE loans SET remaining_balance=$1, interest_paid=interest_paid+$2, months_paid=months_paid+1, months_remaining=$3, status=$4, updated_at=NOW() WHERE id=$5',
+    [newBalance, interestPaid, newMonthsRemaining, newStatus, loan.id]
   );
 }
 
@@ -236,17 +377,15 @@ async function uploadTransCSV(req, res) {
       return res.status(400).json({ error: 'CSV is too short' });
     }
 
-    // Row 0: main column headers
     const headerRow = records[0].map((h) => (h || '').trim());
 
-    // Preload all existing trans_columns labels for quick lookup (normalized)
     const existingCols = await db.query('SELECT key, label FROM trans_columns');
     const labelToKey = {};
     for (const row of existingCols.rows) {
       labelToKey[normalizeLabel(row.label)] = row.key;
+      labelToKey[canonicalizeLabel(row.label)] = row.key;
     }
 
-    // Identify column indices
     const lNoIdx     = headerRow.findIndex((h) => normalizeLabel(h) === 'l/no');
     const staffNoIdx = headerRow.findIndex((h) => normalizeLabel(h) === 'staff no');
     const ippisIdx   = headerRow.findIndex((h) => normalizeLabel(h) === 'ippis no');
@@ -257,14 +396,12 @@ async function uploadTransCSV(req, res) {
       return res.status(400).json({ error: 'CSV must have an L/No column' });
     }
 
-    // Build financial column map & register any new columns in one pass
     const financialCols = [];
     const newColInserts = { ledgers: [], labels: [], sorts: [] };
     for (let i = 0; i < headerRow.length; i++) {
       const h = headerRow[i];
       if (!h || IDENTITY_HEADERS.has(normalizeLabel(h))) continue;
 
-      // Try alias resolution first, then DB lookup, then auto-generate
       let colKey = resolveKey(h, labelToKey);
       if (!colKey) {
         colKey = makeKey(h).slice(0, 150) || `col_${i}`;
@@ -272,8 +409,8 @@ async function uploadTransCSV(req, res) {
         newColInserts.labels.push(h);
         newColInserts.sorts.push(i);
         labelToKey[normalizeLabel(h)] = colKey;
+        labelToKey[canonicalizeLabel(h)] = colKey;
       } else {
-        // Canonical key resolved via LABEL_ALIASES — still register in trans_columns
         const canonMeta = CANONICAL_LABELS[colKey];
         if (canonMeta) {
           newColInserts.ledgers.push(colKey);
@@ -284,7 +421,6 @@ async function uploadTransCSV(req, res) {
       financialCols.push({ idx: i, key: colKey });
     }
 
-    // Batch-insert any new columns
     if (newColInserts.ledgers.length > 0) {
       await db.query(
         `INSERT INTO trans_columns (key, label, sort_order)
@@ -294,7 +430,6 @@ async function uploadTransCSV(req, res) {
       );
     }
 
-    // ── Pre-load ALL existing members into Maps for O(1) lookup ──────────────
     const allMembers = await db.query('SELECT id, LOWER(ledger_no) AS ln, LOWER(staff_no) AS sn FROM members');
     const byLedger = new Map();
     const byStaff  = new Map();
@@ -303,17 +438,16 @@ async function uploadTransCSV(req, res) {
       if (r.sn) byStaff.set(r.sn,  r.id);
     }
 
-    // ── First pass: collect data rows, identify new members ──────────────────
-    const dataRows = [];   // { lNoVal, staffNo, ippisVal, nameVal, row }
-    const newMembers = []; // { ledger_no, staff_no, gifmis_no, full_name }
+    const dataRows = [];
+    const newMembers = [];
 
     for (let rowIdx = 1; rowIdx < records.length; rowIdx++) {
       const row = records[rowIdx];
       if (!row || row.length === 0) continue;
       const snVal  = snIdx  >= 0 ? (row[snIdx]  || '').trim() : '';
       const lNoVal = lNoIdx >= 0 ? (row[lNoIdx] || '').trim() : '';
-      if (snVal && isNaN(Number(snVal))) continue;  // section-header row
-      if (!snVal && !lNoVal) continue;              // totals / blank row
+      if (snVal && isNaN(Number(snVal))) continue;
+      if (!snVal && !lNoVal) continue;
 
       const staffNo  = staffNoIdx >= 0 ? (row[staffNoIdx] || '').trim() : '';
       const ippisVal = ippisIdx   >= 0 ? (row[ippisIdx]   || '').trim() : '';
@@ -333,7 +467,6 @@ async function uploadTransCSV(req, res) {
     try {
       await client.query('BEGIN');
 
-      // ── Batch-upsert new members ────────────────────────────────────────────
       if (newMembers.length > 0) {
         const lnArr = newMembers.map(r => r[0]);
         const snArr = newMembers.map(r => r[1]);
@@ -356,7 +489,6 @@ async function uploadTransCSV(req, res) {
         }
       }
 
-      // ── Re-resolve member IDs and build trans batch ─────────────────────────
       const tMemberIds = [];
       const tColKeys   = [];
       const tAmounts   = [];
@@ -365,9 +497,12 @@ async function uploadTransCSV(req, res) {
 
       let matched   = 0;
       let unmatched = 0;
+      let formulaResolved = 0;
+      let formulaFallback = 0;
       const unmatchedRows = [];
 
-      const loanSyncMap = new Map(); // memberId -> { principal_paid, interest_paid }
+      const loanSyncMap = new Map();
+      const durationOverrides = new Map();
 
       for (const dr of dataRows) {
         const memberId = dr.existId ||
@@ -375,19 +510,52 @@ async function uploadTransCSV(req, res) {
                          (dr.staffNo ? byStaff.get(dr.staffNo.toLowerCase()) : null);
         if (!memberId) { unmatched++; unmatchedRows.push(dr.lNoVal || dr.staffNo); continue; }
 
+        const rowAmounts = {};
+        const rowValueQuality = {};
+        const formulaKeys = new Set();
+
         for (const col of financialCols) {
           const raw = col.idx < dr.row.length ? dr.row[col.idx] : '';
-          const amt = parseAmount(raw);
+          const parsed = parseAmountCell(raw);
+          const quality = parsed.formulaError ? 1 : (parsed.empty ? 0 : 2);
+
+          if (rowAmounts[col.key] === undefined || quality > (rowValueQuality[col.key] ?? -1)) {
+            rowAmounts[col.key] = parsed.formulaError ? 0 : parsed.amount;
+            rowValueQuality[col.key] = quality;
+          }
+
+          if (parsed.formulaError) {
+            formulaKeys.add(col.key);
+          }
+        }
+
+        for (const key of formulaKeys) {
+          const derived = computeDerivedValue(key, rowAmounts);
+          if (derived !== null) {
+            rowAmounts[key] = derived;
+            formulaResolved++;
+          } else {
+            formulaFallback++;
+          }
+        }
+
+        if (rowAmounts.ln_duration_left !== undefined) {
+          const monthsLeft = Math.max(0, Math.round(parseFloat(rowAmounts.ln_duration_left) || 0));
+          durationOverrides.set(memberId, monthsLeft);
+        }
+
+        for (const [colKey, amtRaw] of Object.entries(rowAmounts)) {
+          const amt = parseFloat(amtRaw) || 0;
           tMemberIds.push(memberId);
-          tColKeys.push(col.key);
+          tColKeys.push(colKey);
           tAmounts.push(amt);
           tMonths.push(m);
           tYears.push(y);
-          if (col.key === 'loan_repayment' || col.key === 'loan_repayment_bank') {
+          if (colKey === 'loan_repayment' || colKey === 'loan_repayment_bank') {
             const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
             e.principal_paid += amt;
             loanSyncMap.set(memberId, e);
-          } else if (col.key === 'loan_int_paid' || col.key === 'loan_int_paid_bank') {
+          } else if (colKey === 'loan_int_paid' || colKey === 'loan_int_paid_bank') {
             const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
             e.interest_paid += amt;
             loanSyncMap.set(memberId, e);
@@ -396,7 +564,6 @@ async function uploadTransCSV(req, res) {
         matched++;
       }
 
-      // ── Single batch upsert into monthly_trans via UNNEST ───────────────────
       if (tMemberIds.length > 0) {
         await client.query(
           `INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
@@ -407,19 +574,56 @@ async function uploadTransCSV(req, res) {
         );
       }
 
-      // Sync loan repayments from CSV data into loan tracking tables
       for (const [memberId, { principal_paid, interest_paid }] of loanSyncMap) {
         await syncLoanRepayment(client, memberId, m, y, principal_paid, interest_paid, null);
       }
 
+      for (const [memberId, monthsLeft] of durationOverrides) {
+        await client.query(
+          `UPDATE loans
+           SET months_remaining = $1, updated_at = NOW()
+           WHERE member_id = $2 AND status = 'active'`,
+          [monthsLeft, memberId]
+        );
+      }
+
+      const expiredLoansRes = await client.query(`
+        SELECT DISTINCT m.id, m.full_name, m.ledger_no
+        FROM loans l
+        JOIN members m ON m.id = l.member_id
+        WHERE l.months_remaining = 0 
+          AND l.remaining_balance > 0 
+          AND l.status = 'active'
+          AND m.is_active = TRUE
+      `);
+
+      const deactivatedMembers = [];
+      for (const row of expiredLoansRes.rows) {
+        await client.query(
+          `UPDATE members
+           SET is_active = FALSE, deactivation_reason = 'loan_complete', updated_at = NOW()
+           WHERE id = $1`,
+          [row.id]
+        );
+        deactivatedMembers.push(`${row.ledger_no} (${row.full_name})`);
+      }
+
       await client.query('COMMIT');
       const created = newMembers.length;
+      let message = `Imported ${matched} member${matched !== 1 ? 's' : ''}${created ? ` (${created} new member${created !== 1 ? 's' : ''} created)` : ''}${unmatched ? ` (${unmatched} unmatched)` : ''}`;
+      if (deactivatedMembers.length > 0) {
+        message += `\n\nDEACTIVATED (loan duration = 0 with outstanding balance): ${deactivatedMembers.join(', ')}`;
+      }
       res.json({
         matched,
         created,
         unmatched,
+        formulaResolved,
+        formulaFallback,
         unmatchedRows,
-        message: `Imported ${matched} member${matched !== 1 ? 's' : ''}${created ? ` (${created} new member${created !== 1 ? 's' : ''} created)` : ''}${unmatched ? ` (${unmatched} unmatched)` : ''}`,
+        deactivated: deactivatedMembers.length,
+        deactivatedMembers,
+        message,
       });
     } catch (err) {
       await client.query('ROLLBACK');
@@ -439,30 +643,26 @@ async function getDeductions(req, res) {
   const y = parseInt(year)  || new Date().getFullYear();
 
   try {
-    // Get enabled trans columns
     const colsResult = await db.query(
       'SELECT * FROM trans_columns WHERE enabled = TRUE ORDER BY sort_order, id'
     );
     const columns = colsResult.rows;
 
-    // Get all active members
     const membersResult = await db.query(
-      `SELECT id, ledger_no, staff_no, full_name, department
-       FROM members WHERE is_active = TRUE ORDER BY ledger_no`
+      'SELECT id, ledger_no, staff_no, full_name FROM members WHERE is_active = TRUE ORDER BY ledger_no'
     );
 
-    // Get all monthly_trans data for this month
     const dataResult = await db.query(
       'SELECT member_id, column_key, amount FROM monthly_trans WHERE month=$1 AND year=$2',
       [m, y]
     );
+
     const dataMap = {};
     for (const d of dataResult.rows) {
       if (!dataMap[d.member_id]) dataMap[d.member_id] = {};
       dataMap[d.member_id][d.column_key] = parseFloat(d.amount);
     }
 
-    // Get narrations for this month
     const narrResult = await db.query(
       'SELECT member_id, narration FROM deduction_narrations WHERE month=$1 AND year=$2',
       [m, y]
@@ -472,7 +672,6 @@ async function getDeductions(req, res) {
 
     const hasData = Object.keys(dataMap).length > 0;
 
-    // Return only members that have CSV data uploaded for this month
     const members = membersResult.rows
       .filter((row) => !!dataMap[row.id])
       .map((row) => {
@@ -752,8 +951,8 @@ async function generateNextMonth(req, res) {
         const loan_int_cf     = Math.max(0, int_balance_before - eff_loan_int_paid - eff_loan_int_paid_bank);
         const comm_bal_cf     = Math.max(0, comm_balance_before - eff_comm_repayment - eff_comm_repayment_bank);
 
-        // Total salary deduction (bank-paid portions excluded from salary deduction total)
-        const total_deduction = savings_add + eff_loan_repayment + eff_loan_int_paid + eff_comm_repayment + form + other_charges;
+        // Total deduction (includes both salary and bank payments)
+        const total_deduction = savings_add + savings_add_bank + eff_loan_repayment + eff_loan_repayment_bank + eff_loan_int_paid + eff_loan_int_paid_bank + eff_comm_repayment + eff_comm_repayment_bank + form + other_charges;
 
         const newData = {
           savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
@@ -877,7 +1076,7 @@ async function patchMonthEntry(req, res) {
 
     const form          = g('form');
     const other_charges = g('other_charges');
-    const total_deduction = savings_add + loan_repayment + loan_int_paid + comm_repayment + form + other_charges;
+    const total_deduction = savings_add + savings_add_bank + loan_repayment + loan_repayment_bank + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank + form + other_charges;
 
     const finalData = {
       savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,

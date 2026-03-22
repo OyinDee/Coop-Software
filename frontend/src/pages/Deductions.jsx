@@ -17,10 +17,18 @@ const normalizeReconKey = (value) => String(value ?? '').trim().toLowerCase();
 // TOTAL DEDUCTION = sum of these only
 const DEDUCTION_KEYS = new Set([
   'savings_add', 'savings_add_bank',
+  'add_sav_during_the_month', 'add_sav_during_the_month_bank',
   'loan_repayment', 'loan_repayment_bank',
   'loan_int_paid', 'loan_int_paid_bank',
   'comm_repayment', 'comm_repayment_bank',
   'form', 'other_charges',
+]);
+
+const NON_CURRENCY_KEYS = new Set([
+  'ln_duration_left',
+  'com_gad_duration_left',
+  'loan_status',
+  'comm_gad_status',
 ]);
 
 // ── Upload CSV modal ──────────────────────────────────────────────────────────
@@ -369,7 +377,7 @@ export default function Deductions() {
 
   function rowTotal(m) {
     const stored = parseFloat(m.total_deduction);
-    if (!isNaN(stored) && stored > 0) return stored;
+    if (!isNaN(stored)) return stored;
     return displayColumns.reduce((s, c) => {
       if (!DEDUCTION_KEYS.has(c.key)) return s;
       return s + (parseFloat(m[c.key]) || 0);
@@ -433,6 +441,16 @@ export default function Deductions() {
   const hasDiscrepancy = (member) => {
     const discrepancy = getDiscrepancy(member);
     return discrepancy !== null && discrepancy > 0.01;
+  };
+
+  const formatByKey = (key, value) => {
+    const v = parseFloat(value);
+    if (v === null || v === undefined || isNaN(v)) return <span style={{ color: 'var(--faint)' }}>—</span>;
+    if (NON_CURRENCY_KEYS.has(key)) {
+      const asText = Number.isInteger(v) ? String(v) : v.toFixed(2);
+      return v === 0 ? <span style={{ color: 'var(--faint)' }}>{asText}</span> : asText;
+    }
+    return v === 0 ? <span style={{ color: 'var(--faint)' }}>0.00</span> : fmtNGN(v);
   };
 
   // ── CSV export (detailed) ────────────────────────────────────────────────────────────
@@ -666,12 +684,9 @@ export default function Deductions() {
                     <td style={{ fontWeight: 500 }}>{m.full_name}</td>
                     <td style={{ fontFamily: 'var(--mono)', fontSize: 12, color: 'var(--muted)' }}>{m.staff_no || '—'}</td>
                     {displayColumns.map((c) => {
-                      const v = parseFloat(m[c.key]);
                       return (
                         <td key={c.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
-                          {v === null || v === undefined || isNaN(v)
-                            ? <span style={{ color: 'var(--faint)' }}>—</span>
-                            : v === 0 ? <span style={{ color: 'var(--faint)' }}>0.00</span> : fmtNGN(v)}
+                          {formatByKey(c.key, m[c.key])}
                         </td>
                       );
                     })}
@@ -725,7 +740,9 @@ export default function Deductions() {
                   <td colSpan={4} style={{ textAlign: 'right', fontSize: 11, letterSpacing: 1 }}>TOTALS</td>
                   {displayColumns.map((c) => (
                     <td key={c.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
-                      {fmtNGN(tot(c.key))}
+                      {NON_CURRENCY_KEYS.has(c.key)
+                        ? (Number.isInteger(tot(c.key)) ? String(tot(c.key)) : tot(c.key).toFixed(2))
+                        : fmtNGN(tot(c.key))}
                     </td>
                   ))}
                   <td />

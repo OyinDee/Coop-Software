@@ -11,7 +11,7 @@ async function getSettings(req, res) {
 }
 
 async function updateSettings(req, res) {
-  const { loan_interest_rate } = req.body;
+  const { loan_interest_rate, loan_penalty_rate } = req.body;
   try {
     if (loan_interest_rate !== undefined) {
       const rate = parseFloat(loan_interest_rate);
@@ -24,6 +24,19 @@ async function updateSettings(req, res) {
         [rate.toString()]
       );
     }
+    
+    if (loan_penalty_rate !== undefined) {
+      const rate = parseFloat(loan_penalty_rate);
+      if (isNaN(rate) || rate < 0 || rate > 100) {
+        return res.status(400).json({ error: 'Penalty rate must be between 0 and 100' });
+      }
+      await db.query(
+        `INSERT INTO app_settings (key, value) VALUES ('loan_penalty_rate', $1)
+         ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value`,
+        [rate.toString()]
+      );
+    }
+    
     res.json({ message: 'Settings updated' });
   } catch (err) {
     res.status(500).json({ error: err.message });

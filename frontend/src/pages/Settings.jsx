@@ -8,6 +8,7 @@ export default function Settings() {
 
   // ── Loan interest rate ───────────────────────────────────────────────────
   const [rate, setRate]       = useState('');
+  const [penaltyRate, setPenaltyRate] = useState('');
   const [loading, setLoading] = useState(true);
   const [saving, setSaving]   = useState(false);
 
@@ -28,6 +29,7 @@ export default function Settings() {
   useEffect(() => {
     api.get('/settings').then((r) => {
       setRate(r.data.settings.loan_interest_rate ?? '5');
+      setPenaltyRate(r.data.settings.loan_penalty_rate ?? '10');
     }).finally(() => setLoading(false));
 
     api.get('/settings/columns').then((r) => {
@@ -44,7 +46,10 @@ export default function Settings() {
     e.preventDefault();
     setSaving(true);
     try {
-      await api.put('/settings', { loan_interest_rate: rate });
+      await api.put('/settings', { 
+        loan_interest_rate: rate,
+        loan_penalty_rate: penaltyRate 
+      });
       toast('Settings saved');
     } catch (err) {
       toast(err.response?.data?.error || 'Error saving settings', 'error');
@@ -138,12 +143,12 @@ export default function Settings() {
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading…</div>
       ) : (
         <div className="card" style={{ maxWidth: 480, marginBottom: 28 }}>
-          <div className="card-title">Loan Interest Rate</div>
+          <div className="card-title">Loan Settings</div>
           <form onSubmit={handleSaveRate}>
             <div className="info-box" style={{ marginBottom: 18 }}>
-              This rate is applied to all <strong>new loans</strong>. Existing loans are unaffected.
-              Interest is calculated as a flat percentage of the principal, spread equally across all
-              repayment months.
+              These rates are applied to all <strong>new loans</strong>. Existing loans are unaffected.
+              Interest is calculated as a flat percentage of principal, spread equally across all
+              repayment months. Penalty is applied when a monthly payment is missed.
             </div>
             <div className="form-group">
               <label className="form-label">Interest Rate (%)</label>
@@ -162,6 +167,26 @@ export default function Settings() {
                 <span style={{ color: 'var(--muted)', fontSize: 13 }}>%</span>
                 <span style={{ color: 'var(--faint)', fontSize: 11, marginLeft: 6 }}>
                   e.g. 5 = 5% of principal added as interest
+                </span>
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Penalty Rate (%)</label>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input
+                  className="form-input"
+                  type="number"
+                  min="0"
+                  max="100"
+                  step="0.1"
+                  value={penaltyRate}
+                  onChange={(e) => setPenaltyRate(e.target.value)}
+                  style={{ width: 120 }}
+                  required
+                />
+                <span style={{ color: 'var(--muted)', fontSize: 13 }}>%</span>
+                <span style={{ color: 'var(--faint)', fontSize: 11, marginLeft: 6 }}>
+                  Applied to remaining interest when payment is missed
                 </span>
               </div>
             </div>
