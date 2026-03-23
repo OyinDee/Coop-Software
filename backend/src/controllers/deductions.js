@@ -570,12 +570,27 @@ async function uploadTransCSV(req, res) {
       }
 
       if (tMemberIds.length > 0) {
+        // Deduplicate (member_id, colKey, m, y) to avoid ON CONFLICT error
+        const dedupMap = new Map();
+        for (let i = 0; i < tMemberIds.length; ++i) {
+          const key = `${tMemberIds[i]}|${tColKeys[i]}|${tMonths[i]}|${tYears[i]}`;
+          dedupMap.set(key, tAmounts[i]); // last value wins
+        }
+        const dMemberIds = [], dColKeys = [], dAmounts = [], dMonths = [], dYears = [];
+        for (const k of dedupMap.keys()) {
+          const [member_id, colKey, month, year] = k.split('|');
+          dMemberIds.push(parseInt(member_id));
+          dColKeys.push(colKey);
+          dAmounts.push(dedupMap.get(k));
+          dMonths.push(parseInt(month));
+          dYears.push(parseInt(year));
+        }
         await client.query(
           `INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
            SELECT * FROM UNNEST($1::int[], $2::text[], $3::numeric[], $4::int[], $5::int[])
            ON CONFLICT (member_id, column_key, month, year)
            DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()`,
-          [tMemberIds, tColKeys, tAmounts, tMonths, tYears]
+          [dMemberIds, dColKeys, dAmounts, dMonths, dYears]
         );
       }
 
