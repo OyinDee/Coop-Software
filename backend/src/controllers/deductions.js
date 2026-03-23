@@ -546,19 +546,22 @@ async function uploadTransCSV(req, res) {
 
         for (const [colKey, amtRaw] of Object.entries(rowAmounts)) {
           const amt = parseFloat(amtRaw) || 0;
-          tMemberIds.push(memberId);
-          tColKeys.push(colKey);
-          tAmounts.push(amt);
-          tMonths.push(m);
-          tYears.push(y);
-          if (colKey === 'loan_repayment' || colKey === 'loan_repayment_bank') {
-            const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
-            e.principal_paid += amt;
-            loanSyncMap.set(memberId, e);
-          } else if (colKey === 'loan_int_paid' || colKey === 'loan_int_paid_bank') {
-            const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
-            e.interest_paid += amt;
-            loanSyncMap.set(memberId, e);
+          // Only add to arrays if amount > 0 to avoid duplicates
+          if (amt > 0) {
+            tMemberIds.push(memberId);
+            tColKeys.push(colKey);
+            tAmounts.push(amt);
+            tMonths.push(m);
+            tYears.push(y);
+            if (colKey === 'loan_repayment' || colKey === 'loan_repayment_bank') {
+              const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
+              e.principal_paid += amt;
+              loanSyncMap.set(memberId, e);
+            } else if (colKey === 'loan_int_paid' || colKey === 'loan_int_paid_bank') {
+              const e = loanSyncMap.get(memberId) || { principal_paid: 0, interest_paid: 0 };
+              e.interest_paid += amt;
+              loanSyncMap.set(memberId, e);
+            }
           }
         }
         matched++;
