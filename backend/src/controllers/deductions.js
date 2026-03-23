@@ -360,6 +360,8 @@ async function uploadTransCSV(req, res) {
   const { month, year } = req.body;
   const m = parseInt(month);
   const y = parseInt(year);
+  
+  console.log(`CSV Upload - Processing for month: ${m}, year: ${y}`);
 
   if (!m || !y || !req.file) {
     return res.status(400).json({ error: 'file, month, and year are required' });
