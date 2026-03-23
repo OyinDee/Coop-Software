@@ -3,129 +3,74 @@ const { parse } = require('csv-parse/sync');
 
 async function getBalances(req, res) {
   try {
-    const colsResult = await db.query(
-      'SELECT * FROM balance_columns WHERE enabled = TRUE ORDER BY sort_order, id'
-    );
-    const columns = colsResult.rows;
+    // Get only the required columns for balances
+    const membersResult = await db.query(`
+      SELECT 
+        m.id,
+        m.full_name AS name,
+        m.ledger_no,
+        m.staff_no,
+        COALESCE(mt_savings.amount, 0) AS net_savings,
+        COALESCE(mt_loan_bal.amount, 0) AS loan_ledger_balance,
+        COALESCE(l.months_remaining, 0) AS loan_duration,
+        COALESCE(mt_loan_int.amount, 0) AS balance_on_interest,
+        COALESCE(mt_comm_bal.amount, 0) AS commodity_balance,
+        COALESCE(comm_months.months_left, 0) AS commodity_duration,
+        COALESCE(mt_other.amount, 0) AS others
+      FROM members m
+      LEFT JOIN monthly_trans mt_savings ON mt_savings.member_id = m.id AND mt_savings.column_key = 'savings_cf' 
+        AND mt_savings.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_savings.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN monthly_trans mt_loan_bal ON mt_loan_bal.member_id = m.id AND mt_loan_bal.column_key = 'loan_ledger_bal'
+        AND mt_loan_bal.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_loan_bal.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN monthly_trans mt_loan_int ON mt_loan_int.member_id = m.id AND mt_loan_int.column_key = 'loan_int_cf'
+        AND mt_loan_int.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_loan_int.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN monthly_trans mt_comm_bal ON mt_comm_bal.member_id = m.id AND mt_comm_bal.column_key = 'comm_bal_cf'
+        AND mt_comm_bal.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_comm_bal.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges'
+        AND mt_other.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_other.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN LATERAL (
+        SELECT months_remaining 
+        FROM loans l 
+        WHERE l.member_id = m.id AND l.status = 'active' 
+        ORDER BY l.created_at ASC 
+        LIMIT 1
+      ) l ON true
+      LEFT JOIN LATERAL (
+        SELECT CASE 
+          WHEN c.months_remaining > 0 THEN c.months_remaining 
+          ELSE 0 
+        END as months_left
+        FROM commodity c 
+        WHERE c.member_id = m.id 
+        ORDER BY c.created_at ASC 
+        LIMIT 1
+      ) comm_months ON true
+      -- Include all members (active and deactivated) to show their balances
+      ORDER BY m.ledger_no
+    `);
 
-    // ── Determine data source: monthly_trans if available ─────────────────
-    let srcMonth = parseInt(req.query.month) || null;
-    let srcYear  = parseInt(req.query.year)  || null;
-
-    // Auto-detect latest month with trans data
-    if (!srcMonth || !srcYear) {
-      const latest = await db.query(
-        'SELECT month, year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1'
-      );
-      if (latest.rows.length) {
-        srcMonth = latest.rows[0].month;
-        srcYear  = latest.rows[0].year;
-      }
-    }
-
-    // Check if monthly_trans has data for that month
-    let useTransData = false;
-    const transMap = {};   // memberId → { savings_cf, loan_ledger_bal, loan_int_cf, comm_bal_cf }
-
-    if (srcMonth && srcYear) {
-      const cnt = await db.query(
-        'SELECT COUNT(*) AS cnt FROM monthly_trans WHERE month=$1 AND year=$2',
-        [srcMonth, srcYear]
-      );
-      useTransData = parseInt(cnt.rows[0].cnt) > 0;
-    }
-
-    if (useTransData) {
-      const transRes = await db.query(
-        `SELECT member_id, column_key, amount FROM monthly_trans
-         WHERE month=$1 AND year=$2
-         AND column_key IN ('savings_cf','loan_ledger_bal','loan_int_cf','comm_bal_cf')`,
-        [srcMonth, srcYear]
-      );
-      for (const row of transRes.rows) {
-        if (!transMap[row.member_id]) transMap[row.member_id] = {};
-        transMap[row.member_id][row.column_key] = parseFloat(row.amount);
-      }
-    }
-
-    // Map balance_columns fixed keys → monthly_trans C/F keys
-    const FIXED_TO_TRANS = {
-      savings:      'savings_cf',
-      loans:        'loan_ledger_bal',
-      loan_interest:'loan_int_cf',
-      commodity:    'comm_bal_cf',
-      shares:       null,   // no equivalent in trans CSV
-    };
-
-    let membersResult;
-    if (useTransData) {
-      // Only members that have trans data for this month — optimized for 700+ members
-      membersResult = await db.query(`
-        SELECT m.id, m.ledger_no, m.staff_no, m.full_name
-        FROM members m
-        -- Include all members (active and deactivated) to show their balances
-        ORDER BY m.ledger_no
-      `);
-    } else {
-      // Fall back to live-computed values — optimized query
-      membersResult = await db.query(`
-        SELECT
-          m.id, m.ledger_no, m.staff_no, m.full_name,
-          COALESCE(
-            (SELECT mt.amount FROM monthly_trans mt
-             WHERE mt.member_id = m.id AND mt.column_key = 'savings_cf'
-             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
-            (SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id),
-            0
-          ) AS savings,
-          COALESCE((SELECT SUM(sh.amount) FROM shares sh WHERE sh.member_id = m.id), 0) AS shares,
-          COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loans,
-          COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_interest,
-          COALESCE(
-            (SELECT mt.amount FROM monthly_trans mt
-             WHERE mt.member_id = m.id AND mt.column_key = 'comm_bal_cf'
-             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
-            (SELECT SUM(c.amount) FROM commodity c WHERE c.member_id = m.id),
-            0
-          ) AS commodity
-        FROM members m
-        -- Include all members (active and deactivated) to show their balances
-        ORDER BY m.ledger_no
-      `);
-    }
-
-    // Pull all custom balance values
-    const customResult = await db.query(
-      'SELECT member_id, column_key, amount FROM member_custom_balances'
-    );
-    const customMap = {};
-    for (const row of customResult.rows) {
-      if (!customMap[row.member_id]) customMap[row.member_id] = {};
-      customMap[row.member_id][row.column_key] = parseFloat(row.amount);
-    }
-
-    const members = membersResult.rows
-      .filter((m) => !useTransData || !!transMap[m.id])
-      .map((m) => {
-        const custom = customMap[m.id] || {};
-        const trans  = transMap[m.id]  || {};
-        const result = { ...m };
-        for (const col of columns) {
-          if (col.type === 'custom') {
-            result[col.key] = custom[col.key] ?? 0;
-          } else if (useTransData) {
-            const transKey = FIXED_TO_TRANS[col.key];
-            result[col.key] = transKey !== undefined ? (trans[transKey] ?? 0) : 0;
-          }
-          // else: already in result from the live-computed SQL query
-        }
-        return result;
-      });
+    // Define the fixed columns for balances (no totals)
+    const columns = [
+      { key: 'name', label: 'NAME', enabled: true, sort_order: 1, type: 'fixed' },
+      { key: 'ledger_no', label: 'LEDGER No', enabled: true, sort_order: 2, type: 'fixed' },
+      { key: 'staff_no', label: 'STAFF No', enabled: true, sort_order: 3, type: 'fixed' },
+      { key: 'net_savings', label: 'Net savings (TOTAL SAVINGS)', enabled: true, sort_order: 4, type: 'fixed' },
+      { key: 'loan_ledger_balance', label: 'LOAN LEDGER BALANCE', enabled: true, sort_order: 5, type: 'fixed' },
+      { key: 'loan_duration', label: 'LOAN DURATION', enabled: true, sort_order: 6, type: 'fixed' },
+      { key: 'balance_on_interest', label: 'BALANCE ON INTEREST', enabled: true, sort_order: 7, type: 'fixed' },
+      { key: 'commodity_balance', label: 'COMMODITY BALANCE', enabled: true, sort_order: 8, type: 'fixed' },
+      { key: 'commodity_duration', label: 'COMMODITY DURATION', enabled: true, sort_order: 9, type: 'fixed' },
+      { key: 'others', label: 'OTHERS', enabled: true, sort_order: 10, type: 'fixed' }
+    ];
 
     res.json({
       columns,
-      members,
-      ...(useTransData ? { dataMonth: srcMonth, dataYear: srcYear } : {}),
+      members: membersResult.rows,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });

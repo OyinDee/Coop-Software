@@ -680,45 +680,54 @@ async function getDeductions(req, res) {
   const y = parseInt(year)  || new Date().getFullYear();
 
   try {
-    const colsResult = await db.query(
-      'SELECT * FROM trans_columns WHERE enabled = TRUE ORDER BY sort_order, id'
+    // Get only the required columns for reports
+    const membersResult = await db.query(`
+      SELECT 
+        m.id, 
+        m.ledger_no, 
+        m.staff_no, 
+        m.gifmis_no,
+        m.full_name,
+        COALESCE(mt_savings.amount, 0) AS savings,
+        COALESCE(mt_loan_repayment.amount, 0) AS loan_repayment,
+        COALESCE(mt_loan_interest.amount, 0) AS loan_interest,
+        COALESCE(mt_commodity.amount, 0) AS commodity_repayment,
+        COALESCE(mt_form.amount, 0) AS membership_loan_form,
+        COALESCE(mt_other.amount, 0) AS other_charges,
+        COALESCE(mt_total.amount, 0) AS total_deductions
+      FROM members m
+      LEFT JOIN monthly_trans mt_savings ON mt_savings.member_id = m.id AND mt_savings.column_key = 'savings_add' AND mt_savings.month = $1 AND mt_savings.year = $2
+      LEFT JOIN monthly_trans mt_loan_repayment ON mt_loan_repayment.member_id = m.id AND mt_loan_repayment.column_key = 'loan_repayment' AND mt_loan_repayment.month = $1 AND mt_loan_repayment.year = $2
+      LEFT JOIN monthly_trans mt_loan_interest ON mt_loan_interest.member_id = m.id AND mt_loan_interest.column_key = 'loan_int_paid' AND mt_loan_interest.month = $1 AND mt_loan_interest.year = $2
+      LEFT JOIN monthly_trans mt_commodity ON mt_commodity.member_id = m.id AND mt_commodity.column_key = 'comm_repayment' AND mt_commodity.month = $1 AND mt_commodity.year = $2
+      LEFT JOIN monthly_trans mt_form ON mt_form.member_id = m.id AND mt_form.column_key = 'form' AND mt_form.month = $1 AND mt_form.year = $2
+      LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges' AND mt_other.month = $1 AND mt_other.year = $2
+      LEFT JOIN monthly_trans mt_total ON mt_total.member_id = m.id AND mt_total.column_key = 'total_deduction' AND mt_total.month = $1 AND mt_total.year = $2
+      WHERE m.is_active = TRUE
+      ORDER BY m.ledger_no
+    `, [m, y]);
+
+    const hasData = membersResult.rows.some(row => 
+      row.savings > 0 || row.loan_repayment > 0 || row.loan_interest > 0 || 
+      row.commodity_repayment > 0 || row.membership_loan_form > 0 || row.other_charges > 0
     );
-    const columns = colsResult.rows;
 
-    const membersResult = await db.query(
-      'SELECT id, ledger_no, staff_no, full_name FROM members WHERE is_active = TRUE ORDER BY ledger_no'
-    );
+    // Define the fixed columns for reports
+    const columns = [
+      { key: 'ledger_no', label: 'L/No', enabled: true, sort_order: 1 },
+      { key: 'full_name', label: 'Name', enabled: true, sort_order: 2 },
+      { key: 'staff_no', label: 'Staff No', enabled: true, sort_order: 3 },
+      { key: 'gifmis_no', label: 'GIFMIS No', enabled: true, sort_order: 4 },
+      { key: 'savings', label: 'SAVINGS', enabled: true, sort_order: 5 },
+      { key: 'loan_repayment', label: 'LOAN REPAYMENT', enabled: true, sort_order: 6 },
+      { key: 'loan_interest', label: 'LN INTEREST', enabled: true, sort_order: 7 },
+      { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT', enabled: true, sort_order: 8 },
+      { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM', enabled: true, sort_order: 9 },
+      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 10 },
+      { key: 'total_deductions', label: 'TOTAL DEDUCTIONS', enabled: true, sort_order: 11 }
+    ];
 
-    const dataResult = await db.query(
-      'SELECT member_id, column_key, amount FROM monthly_trans WHERE month=$1 AND year=$2',
-      [m, y]
-    );
-
-    const dataMap = {};
-    for (const d of dataResult.rows) {
-      if (!dataMap[d.member_id]) dataMap[d.member_id] = {};
-      dataMap[d.member_id][d.column_key] = parseFloat(d.amount);
-    }
-
-    const narrResult = await db.query(
-      'SELECT member_id, narration FROM deduction_narrations WHERE month=$1 AND year=$2',
-      [m, y]
-    );
-    const narrMap = {};
-    for (const n of narrResult.rows) narrMap[n.member_id] = n.narration;
-
-    const hasData = Object.keys(dataMap).length > 0;
-
-    const members = membersResult.rows
-      .filter((row) => !!dataMap[row.id])
-      .map((row) => {
-        const memberData = dataMap[row.id] || {};
-        const result = { ...row, narration: narrMap[row.id] || '' };
-        for (const col of columns) result[col.key] = memberData[col.key] ?? null;
-        return result;
-      });
-
-    res.json({ columns, members, month: m, year: y, hasData });
+    res.json({ columns, members: membersResult.rows, month: m, year: y, hasData });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
