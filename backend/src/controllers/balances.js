@@ -15,7 +15,11 @@ async function getBalances(req, res) {
         COALESCE(l.months_remaining, 0) AS loan_duration,
         COALESCE(mt_loan_int.amount, 0) AS balance_on_interest,
         COALESCE(mt_comm_bal.amount, 0) AS commodity_balance,
-        COALESCE(comm_months.months_left, 0) AS commodity_duration,
+        CASE 
+          WHEN mt_comm_bal.amount > 0 AND mt_comm_repayment.amount > 0 THEN 
+            CEIL(mt_comm_bal.amount / mt_comm_repayment.amount)
+          ELSE 0 
+        END AS commodity_duration,
         COALESCE(mt_other.amount, 0) AS others
       FROM members m
       LEFT JOIN monthly_trans mt_savings ON mt_savings.member_id = m.id AND mt_savings.column_key = 'savings_cf' 
@@ -30,26 +34,19 @@ async function getBalances(req, res) {
       LEFT JOIN monthly_trans mt_comm_bal ON mt_comm_bal.member_id = m.id AND mt_comm_bal.column_key = 'comm_bal_cf'
         AND mt_comm_bal.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
         AND mt_comm_bal.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
-      LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges'
-        AND mt_other.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
-        AND mt_other.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
+      LEFT JOIN monthly_trans mt_comm_repayment ON mt_comm_repayment.member_id = m.id AND mt_comm_repayment.column_key = 'comm_repayment'
+        AND mt_comm_repayment.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_comm_repayment.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
       LEFT JOIN LATERAL (
         SELECT months_remaining 
         FROM loans l 
         WHERE l.member_id = m.id AND l.status = 'active' 
-        ORDER BY l.created_at ASC 
+        ORDER BY l.created_at DESC 
         LIMIT 1
       ) l ON true
-      LEFT JOIN LATERAL (
-        SELECT CASE 
-          WHEN c.months_remaining > 0 THEN c.months_remaining 
-          ELSE 0 
-        END as months_left
-        FROM commodity c 
-        WHERE c.member_id = m.id 
-        ORDER BY c.created_at ASC 
-        LIMIT 1
-      ) comm_months ON true
+      LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges'
+        AND mt_other.month = (SELECT month FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1) 
+        AND mt_other.year = (SELECT year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1)
       -- Include all members (active and deactivated) to show their balances
       ORDER BY m.ledger_no
     `);

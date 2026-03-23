@@ -689,27 +689,38 @@ async function getDeductions(req, res) {
         m.gifmis_no,
         m.full_name,
         COALESCE(mt_savings.amount, 0) AS savings,
+        COALESCE(mt_savings_bank.amount, 0) AS savings_bank,
         COALESCE(mt_loan_repayment.amount, 0) AS loan_repayment,
+        COALESCE(mt_loan_repayment_bank.amount, 0) AS loan_repayment_bank,
         COALESCE(mt_loan_interest.amount, 0) AS loan_interest,
         COALESCE(mt_commodity.amount, 0) AS commodity_repayment,
         COALESCE(mt_form.amount, 0) AS membership_loan_form,
         COALESCE(mt_other.amount, 0) AS other_charges,
-        COALESCE(mt_total.amount, 0) AS total_deductions
+        -- Calculate total deduction as sum of all components
+        (COALESCE(mt_savings.amount, 0) + 
+         COALESCE(mt_savings_bank.amount, 0) +
+         COALESCE(mt_loan_repayment.amount, 0) + 
+         COALESCE(mt_loan_repayment_bank.amount, 0) +
+         COALESCE(mt_loan_interest.amount, 0) + 
+         COALESCE(mt_commodity.amount, 0) + 
+         COALESCE(mt_form.amount, 0) + 
+         COALESCE(mt_other.amount, 0)) AS total_deductions
       FROM members m
       LEFT JOIN monthly_trans mt_savings ON mt_savings.member_id = m.id AND mt_savings.column_key = 'savings_add' AND mt_savings.month = $1 AND mt_savings.year = $2
+      LEFT JOIN monthly_trans mt_savings_bank ON mt_savings_bank.member_id = m.id AND mt_savings_bank.column_key = 'savings_add_bank' AND mt_savings_bank.month = $1 AND mt_savings_bank.year = $2
       LEFT JOIN monthly_trans mt_loan_repayment ON mt_loan_repayment.member_id = m.id AND mt_loan_repayment.column_key = 'loan_repayment' AND mt_loan_repayment.month = $1 AND mt_loan_repayment.year = $2
+      LEFT JOIN monthly_trans mt_loan_repayment_bank ON mt_loan_repayment_bank.member_id = m.id AND mt_loan_repayment_bank.column_key = 'loan_repayment_bank' AND mt_loan_repayment_bank.month = $1 AND mt_loan_repayment_bank.year = $2
       LEFT JOIN monthly_trans mt_loan_interest ON mt_loan_interest.member_id = m.id AND mt_loan_interest.column_key = 'loan_int_paid' AND mt_loan_interest.month = $1 AND mt_loan_interest.year = $2
       LEFT JOIN monthly_trans mt_commodity ON mt_commodity.member_id = m.id AND mt_commodity.column_key = 'comm_repayment' AND mt_commodity.month = $1 AND mt_commodity.year = $2
       LEFT JOIN monthly_trans mt_form ON mt_form.member_id = m.id AND mt_form.column_key = 'form' AND mt_form.month = $1 AND mt_form.year = $2
       LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges' AND mt_other.month = $1 AND mt_other.year = $2
-      LEFT JOIN monthly_trans mt_total ON mt_total.member_id = m.id AND mt_total.column_key = 'total_deduction' AND mt_total.month = $1 AND mt_total.year = $2
       WHERE m.is_active = TRUE
       ORDER BY m.ledger_no
     `, [m, y]);
 
     const hasData = membersResult.rows.some(row => 
-      row.savings > 0 || row.loan_repayment > 0 || row.loan_interest > 0 || 
-      row.commodity_repayment > 0 || row.membership_loan_form > 0 || row.other_charges > 0
+      row.savings > 0 || row.savings_bank > 0 || row.loan_repayment > 0 || row.loan_repayment_bank > 0 || 
+      row.loan_interest > 0 || row.commodity_repayment > 0 || row.membership_loan_form > 0 || row.other_charges > 0
     );
 
     // Define the fixed columns for reports
@@ -719,12 +730,14 @@ async function getDeductions(req, res) {
       { key: 'staff_no', label: 'Staff No', enabled: true, sort_order: 3 },
       { key: 'gifmis_no', label: 'GIFMIS No', enabled: true, sort_order: 4 },
       { key: 'savings', label: 'SAVINGS', enabled: true, sort_order: 5 },
-      { key: 'loan_repayment', label: 'LOAN REPAYMENT', enabled: true, sort_order: 6 },
-      { key: 'loan_interest', label: 'LN INTEREST', enabled: true, sort_order: 7 },
-      { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT', enabled: true, sort_order: 8 },
-      { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM', enabled: true, sort_order: 9 },
-      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 10 },
-      { key: 'total_deductions', label: 'TOTAL DEDUCTIONS', enabled: true, sort_order: 11 }
+      { key: 'savings_bank', label: 'SAVINGS (BANK)', enabled: true, sort_order: 6 },
+      { key: 'loan_repayment', label: 'LOAN REPAYMENT', enabled: true, sort_order: 7 },
+      { key: 'loan_repayment_bank', label: 'LOAN REPAYMENT (BANK)', enabled: true, sort_order: 8 },
+      { key: 'loan_interest', label: 'LN INTEREST', enabled: true, sort_order: 9 },
+      { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT', enabled: true, sort_order: 10 },
+      { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM', enabled: true, sort_order: 11 },
+      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 12 },
+      { key: 'total_deductions', label: 'TOTAL DEDUCTIONS', enabled: true, sort_order: 13 }
     ];
 
     res.json({ columns, members: membersResult.rows, month: m, year: y, hasData });
