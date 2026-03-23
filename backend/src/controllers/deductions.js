@@ -597,12 +597,19 @@ async function uploadTransCSV(req, res) {
       }
 
       if (savingsRecords.length > 0) {
+        // Convert array of arrays to separate arrays for UNNEST
+        const savMemberIds = savingsRecords.map(r => r[0]);
+        const savAmounts = savingsRecords.map(r => r[1]);
+        const savMonths = savingsRecords.map(r => r[2]);
+        const savYears = savingsRecords.map(r => r[3]);
+        const savDescriptions = savingsRecords.map(r => r[4]);
+        
         await client.query(
           `INSERT INTO savings (member_id, amount, month, year, description)
            SELECT * FROM UNNEST($1::int[], $2::numeric[], $3::int[], $4::int[], $5::text[])
            ON CONFLICT (member_id, month, year) 
            DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description`,
-          savingsRecords
+          [savMemberIds, savAmounts, savMonths, savYears, savDescriptions]
         );
       }
 
