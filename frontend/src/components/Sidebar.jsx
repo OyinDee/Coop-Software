@@ -38,14 +38,7 @@ const NAV = [
       </svg>
     ),
   },
-  {
-    label: 'Savings', to: '/savings',
-    icon: (
-      <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
-        <circle cx="12" cy="12" r="10" /><polyline points="12 6 12 12 16 14" />
-      </svg>
-    ),
-  },
+
   {
     label: 'Commodity', to: '/commodity',
     icon: (

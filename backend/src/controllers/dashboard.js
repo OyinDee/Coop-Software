@@ -13,8 +13,24 @@ async function getDashboard(req, res) {
           ORDER BY member_id, year DESC, month DESC
         ) latest_savings
       `),
-      db.query("SELECT COALESCE(SUM(remaining_balance), 0) AS total FROM loans WHERE status = 'active'"),
-      db.query("SELECT COALESCE(SUM(total_interest - interest_paid), 0) AS total FROM loans WHERE status = 'active'"),
+      db.query(`
+        SELECT COALESCE(SUM(amount), 0) AS total 
+        FROM (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'loan_ledger_bal' 
+          ORDER BY member_id, year DESC, month DESC
+        ) latest_loans
+      `),
+      db.query(`
+        SELECT COALESCE(SUM(amount), 0) AS total 
+        FROM (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'loan_int_cf' 
+          ORDER BY member_id, year DESC, month DESC
+        ) latest_loan_interest
+      `),
       db.query(`
         SELECT m.full_name, m.ledger_no, 
           COALESCE(latest.amount, 0) AS total_savings
@@ -31,12 +47,23 @@ async function getDashboard(req, res) {
       `),
       db.query(`
         SELECT m.full_name, m.ledger_no,
-          COALESCE(SUM(l.remaining_balance), 0) AS loan_balance,
-          COALESCE(SUM(l.total_interest - l.interest_paid), 0) AS interest_due,
-          COUNT(l.id) AS loan_count
+          COALESCE(loan_bal.amount, 0) AS loan_balance,
+          COALESCE(loan_int.amount, 0) AS interest_due,
+          CASE WHEN loan_bal.amount > 0 OR loan_int.amount > 0 THEN 1 ELSE 0 END AS loan_count
         FROM members m
-        JOIN loans l ON l.member_id = m.id AND l.status = 'active'
-        GROUP BY m.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'loan_ledger_bal' 
+          ORDER BY member_id, year DESC, month DESC
+        ) loan_bal ON loan_bal.member_id = m.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'loan_int_cf' 
+          ORDER BY member_id, year DESC, month DESC
+        ) loan_int ON loan_int.member_id = m.id
+        WHERE loan_bal.amount > 0 OR loan_int.amount > 0
         ORDER BY loan_balance DESC
         LIMIT 5
       `),
