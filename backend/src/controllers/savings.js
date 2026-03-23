@@ -48,7 +48,13 @@ async function getSavings(req, res) {
           s.id            AS id,
           $1::int         AS month,
           $2::int         AS year,
-          s.description,
+          COALESCE(
+            s.description,
+            CASE 
+              WHEN s.id IS NULL THEN 'Opening Balance'
+              ELSE 'Carried Forward'
+            END
+          ) AS description,
           COALESCE(
             s.amount,
             (SELECT sv.amount FROM savings sv

@@ -108,7 +108,13 @@ async function getMember(req, res) {
     const memberResult = await db.query(`
       SELECT
         m.*,
-        COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id), 0) AS total_savings,
+        COALESCE(
+            (SELECT mt.amount FROM monthly_trans mt
+             WHERE mt.member_id = m.id AND mt.column_key = 'savings_cf'
+             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
+            (SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id),
+            0
+          ) AS total_savings,
         COALESCE((SELECT SUM(shares.amount) FROM shares WHERE shares.member_id = m.id), 0) AS total_shares,
         COALESCE((SELECT SUM(c.amount) FROM commodity c WHERE c.member_id = m.id), 0) AS total_commodity,
         COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_balance,
@@ -291,8 +297,10 @@ async function importCSV(req, res) {
       }
     }
 
-    res.json({ message: `${imported} members imported, ${skipped} skipped`, imported, skipped, errors });
+    console.log('Members import successful, sending response:', { imported, skipped, errors });
+    res.json({ ok: true, message: `${imported} members imported, ${skipped} skipped`, imported, skipped, errors });
   } catch (err) {
+    console.error('Members import error:', err);
     res.status(500).json({ error: err.message });
   }
 }
@@ -467,8 +475,10 @@ async function importBalances(req, res) {
       }
     }
 
-    res.json({ message: `${imported} members updated, ${skipped} skipped`, imported, skipped, errors });
+    console.log('Balances import successful, sending response:', { imported, skipped, errors });
+    res.json({ ok: true, message: `${imported} members updated, ${skipped} skipped`, imported, skipped, errors });
   } catch (err) {
+    console.error('Balances import error:', err);
     res.status(500).json({ error: err.message });
   }
 }
@@ -584,7 +594,13 @@ async function getDeactivatedMembers(req, res) {
         m.deactivation_reason, m.updated_at,
         COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS outstanding_loan,
         COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS outstanding_interest,
-        COALESCE((SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id), 0) AS total_savings
+        COALESCE(
+            (SELECT mt.amount FROM monthly_trans mt
+             WHERE mt.member_id = m.id AND mt.column_key = 'savings_cf'
+             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
+            (SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id),
+            0
+          ) AS total_savings
       FROM members m
       WHERE m.is_active = FALSE
       ORDER BY m.updated_at DESC

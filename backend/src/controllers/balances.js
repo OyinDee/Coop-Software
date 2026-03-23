@@ -71,11 +71,23 @@ async function getBalances(req, res) {
       membersResult = await db.query(`
         SELECT
           m.id, m.ledger_no, m.staff_no, m.full_name,
-          COALESCE((SELECT SUM(s.amount)  FROM savings s  WHERE s.member_id = m.id), 0) AS savings,
-          COALESCE((SELECT SUM(sh.amount) FROM shares sh  WHERE sh.member_id = m.id), 0) AS shares,
+          COALESCE(
+            (SELECT mt.amount FROM monthly_trans mt
+             WHERE mt.member_id = m.id AND mt.column_key = 'savings_cf'
+             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
+            (SELECT SUM(s.amount) FROM savings s WHERE s.member_id = m.id),
+            0
+          ) AS savings,
+          COALESCE((SELECT SUM(sh.amount) FROM shares sh WHERE sh.member_id = m.id), 0) AS shares,
           COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loans,
           COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_interest,
-          COALESCE((SELECT SUM(c.amount)  FROM commodity c WHERE c.member_id = m.id), 0) AS commodity
+          COALESCE(
+            (SELECT mt.amount FROM monthly_trans mt
+             WHERE mt.member_id = m.id AND mt.column_key = 'comm_bal_cf'
+             ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
+            (SELECT SUM(c.amount) FROM commodity c WHERE c.member_id = m.id),
+            0
+          ) AS commodity
         FROM members m
         -- Include all members (active and deactivated) to show their balances
         ORDER BY m.ledger_no

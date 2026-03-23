@@ -574,6 +574,38 @@ async function uploadTransCSV(req, res) {
         );
       }
 
+      // Create actual savings records from CSV data for proper display
+      const savingsRecords = [];
+      for (let i = 0; i < tMemberIds.length; i++) {
+        if (tColKeys[i] === 'savings_add') {
+          savingsRecords.push([
+            tMemberIds[i],           // member_id
+            tAmounts[i],             // amount
+            tMonths[i],              // month
+            tYears[i],               // year
+            `Monthly Savings - ${m}/${y}` // description
+          ]);
+        } else if (tColKeys[i] === 'savings_bf') {
+          savingsRecords.push([
+            tMemberIds[i],           // member_id
+            tAmounts[i],             // amount
+            tMonths[i],              // month
+            tYears[i],               // year
+            `Opening Balance - ${m}/${y}` // description
+          ]);
+        }
+      }
+
+      if (savingsRecords.length > 0) {
+        await client.query(
+          `INSERT INTO savings (member_id, amount, month, year, description)
+           SELECT * FROM UNNEST($1::int[], $2::numeric[], $3::int[], $4::int[], $5::text[])
+           ON CONFLICT (member_id, month, year) 
+           DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description`,
+          savingsRecords
+        );
+      }
+
       for (const [memberId, { principal_paid, interest_paid }] of loanSyncMap) {
         await syncLoanRepayment(client, memberId, m, y, principal_paid, interest_paid, null);
       }
@@ -614,7 +646,10 @@ async function uploadTransCSV(req, res) {
       if (deactivatedMembers.length > 0) {
         message += `\n\nDEACTIVATED (loan duration = 0 with outstanding balance): ${deactivatedMembers.join(', ')}`;
       }
+      
+      console.log('Upload successful, sending response:', { matched, created, unmatched });
       res.json({
+        ok: true,
         matched,
         created,
         unmatched,
@@ -626,12 +661,14 @@ async function uploadTransCSV(req, res) {
         message,
       });
     } catch (err) {
+      console.error('Upload error:', err);
       await client.query('ROLLBACK');
       throw err;
     } finally {
       client.release();
     }
   } catch (err) {
+    console.error('Final upload error:', err);
     res.status(500).json({ error: err.message });
   }
 }
