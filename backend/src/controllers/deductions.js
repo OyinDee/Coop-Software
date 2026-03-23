@@ -548,8 +548,8 @@ async function uploadTransCSV(req, res) {
 
         for (const [colKey, amtRaw] of Object.entries(rowAmounts)) {
           const amt = parseFloat(amtRaw) || 0;
-          // Only add to arrays if amount > 0 to avoid duplicates
-          if (amt > 0) {
+          // Only add to arrays if amount is not null/undefined (allow zeros)
+          if (amtRaw !== undefined && amtRaw !== null && amtRaw !== '') {
             tMemberIds.push(memberId);
             tColKeys.push(colKey);
             tAmounts.push(amt);
