@@ -49,16 +49,15 @@ export default function Balances() {
 
   const location = useLocation();
   
-  // Only fetch when location actually changes (not on every render)
-  useEffect(() => { 
-    if (!loading) fetchBalances(); 
-  }, [location.pathname, location.search, loading]);
-
-  // Only fetch when month/year actually changes
   useEffect(() => {
-    if (!viewMonth || !viewYear || loading) return;
-    fetchBalances(viewMonth, viewYear);
-  }, [viewMonth, viewYear, loading]);
+    fetchBalances();
+  }, []);
+
+  useEffect(() => {
+    if (viewMonth && viewYear) {
+      fetchBalances(viewMonth, viewYear);
+    }
+  }, [viewMonth, viewYear]);
 
   // ── Filter ────────────────────────────────────────────────────────
   const filtered = useMemo(() => members.filter((m) => {
