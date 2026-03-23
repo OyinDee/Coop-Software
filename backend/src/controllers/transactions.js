@@ -70,8 +70,8 @@ async function getTransactions(req, res) {
       FROM members m
       LEFT JOIN savings  s  ON s.member_id  = m.id AND s.month  = $1 AND s.year  = $2
       LEFT JOIN shares   sh ON sh.member_id = m.id AND sh.month = $1 AND sh.year = $2
-      LEFT JOIN commodity c ON c.member_id  = m.id AND c.month  = $1 AND c.year  = $2
-      WHERE m.is_active = TRUE
+      LEFT JOIN commodity c ON c.member_id  = m.id AND c.month  = $1 AND c.year = $2
+      -- Include all members (active and deactivated) to show their transactions
       ORDER BY m.ledger_no
     `, [m, y]);
 
@@ -119,7 +119,7 @@ async function getMonthlyReport(req, res) {
         ), 0) AS total
         FROM members mem
         LEFT JOIN savings s ON s.member_id = mem.id AND s.month = $1 AND s.year = $2
-        WHERE mem.is_active = TRUE
+        -- Include all members (active and deactivated) to show their savings
       `, [m, y]),
       // Loans: active loans within their scheduled term, smart-capped on final month
       db.query(`
@@ -146,10 +146,10 @@ async function getMonthlyReport(req, res) {
       db.query(`
         SELECT COALESCE(
           (SELECT SUM(mt.amount) FROM monthly_trans mt
-           JOIN members mem2 ON mem2.id = mt.member_id AND mem2.is_active = TRUE
+           JOIN members mem2 ON mem2.id = mt.member_id
            WHERE mt.column_key = 'comm_add' AND mt.month = $1 AND mt.year = $2),
           (SELECT SUM(c.amount) FROM commodity c
-           JOIN members mem2 ON mem2.id = c.member_id AND mem2.is_active = TRUE
+           JOIN members mem2 ON mem2.id = c.member_id
            WHERE c.month = $1 AND c.year = $2),
           0
         ) as total

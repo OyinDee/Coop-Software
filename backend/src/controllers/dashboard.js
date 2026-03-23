@@ -4,14 +4,28 @@ async function getDashboard(req, res) {
   try {
     const [membersRes, savingsRes, loansRes, interestRes, topSaversRes, activeLoansRes] = await Promise.all([
       db.query('SELECT COUNT(*) FROM members WHERE is_active = TRUE'),
-      db.query('SELECT COALESCE(SUM(amount), 0) AS total FROM savings'),
+      db.query(`
+        SELECT COALESCE(SUM(amount), 0) AS total 
+        FROM (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'savings_cf' 
+          ORDER BY member_id, year DESC, month DESC
+        ) latest_savings
+      `),
       db.query("SELECT COALESCE(SUM(remaining_balance), 0) AS total FROM loans WHERE status = 'active'"),
       db.query("SELECT COALESCE(SUM(total_interest - interest_paid), 0) AS total FROM loans WHERE status = 'active'"),
       db.query(`
-        SELECT m.full_name, m.ledger_no, COALESCE(SUM(s.amount), 0) AS total_savings
+        SELECT m.full_name, m.ledger_no, 
+          COALESCE(latest.amount, 0) AS total_savings
         FROM members m
-        JOIN savings s ON s.member_id = m.id
-        GROUP BY m.id
+        LEFT JOIN (
+          SELECT DISTINCT ON (member_id) member_id, amount
+          FROM monthly_trans 
+          WHERE column_key = 'savings_cf' 
+          ORDER BY member_id, year DESC, month DESC
+        ) latest ON latest.member_id = m.id
+        -- Include all members (active and deactivated) to show their savings
         ORDER BY total_savings DESC
         LIMIT 5
       `),

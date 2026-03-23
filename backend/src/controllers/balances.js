@@ -63,7 +63,7 @@ async function getBalances(req, res) {
       membersResult = await db.query(`
         SELECT m.id, m.ledger_no, m.staff_no, m.full_name
         FROM members m
-        WHERE m.is_active = TRUE
+        -- Include all members (active and deactivated) to show their balances
         ORDER BY m.ledger_no
       `);
     } else {
@@ -77,7 +77,7 @@ async function getBalances(req, res) {
           COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_interest,
           COALESCE((SELECT SUM(c.amount)  FROM commodity c WHERE c.member_id = m.id), 0) AS commodity
         FROM members m
-        WHERE m.is_active = TRUE
+        -- Include all members (active and deactivated) to show their balances
         ORDER BY m.ledger_no
       `);
     }

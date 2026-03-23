@@ -79,7 +79,7 @@ async function getSavings(req, res) {
         FROM members m
         LEFT JOIN savings s
           ON s.member_id = m.id AND s.month = $1 AND s.year = $2
-        WHERE m.is_active = TRUE
+        -- Include all members (active and deactivated) to show their savings and loans
         ORDER BY m.ledger_no
       `, [m, y]);
       return res.json({ savings: result.rows });

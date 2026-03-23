@@ -209,9 +209,17 @@ export default function Members() {
             <table>
               <thead>
                 <tr>
-                  <th>Ledger No</th><th>Name</th><th>Staff No</th><th>Department</th>
-                  <th>Bank</th><th>Savings</th><th>Loan Balance</th><th>Interest Due</th>
-                  <th>Status</th><th></th>
+                  <th>Ledger No</th>
+                  <th>Name</th>
+                  <th>Staff No</th>
+                  <th>GIFMIS No</th>
+                  <th>Email</th>
+                  <th>GSM No</th>
+                  <th>Bank</th>
+                  <th>Acct. No</th>
+                  <th>Next of kin</th>
+                  <th>Relation</th>
+                  <th></th>
                 </tr>
               </thead>
               <tbody>
@@ -220,15 +228,15 @@ export default function Members() {
                     <td className="td-mono td-gold">{m.ledger_no}</td>
                     <td>{m.full_name}</td>
                     <td className="td-mono td-muted" style={{ fontSize: 11 }}>{m.staff_no || '—'}</td>
-                    <td className="td-muted">{m.department || '—'}</td>
+                    <td className="td-mono td-muted" style={{ fontSize: 11 }}>{m.gifmis_no || '—'}</td>
+                    <td>{m.email || '—'}</td>
+                    <td>{m.phone || '—'}</td>
                     <td>{m.bank || '—'}</td>
-                    <td className="td-green">{parseFloat(m.total_savings) > 0 ? fmtNGN(m.total_savings) : '—'}</td>
-                    <td className={parseFloat(m.loan_balance) > 0 ? 'td-red' : 'td-muted'}>{parseFloat(m.loan_balance) > 0 ? fmtNGN(m.loan_balance) : '—'}</td>
-                    <td className={parseFloat(m.interest_due) > 0 ? 'td-amber' : 'td-muted'}>{parseFloat(m.interest_due) > 0 ? fmtNGN(m.interest_due) : '—'}</td>
-                    <td>{loanBadge(m)}</td>
+                    <td>{m.account_number || '—'}</td>
+                    <td>{m.next_of_kin || '—'}</td>
+                    <td>{m.next_of_kin_relation || '—'}</td>
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
-                        <button className="btn btn-ghost btn-sm" onClick={() => navigate(`/ledger/${m.id}`)}>View</button>
                         <button className="btn btn-ghost btn-sm" onClick={() => openEdit(m)}>Edit</button>
                         <button className="btn btn-danger btn-sm" onClick={() => handleDelete(m.id)}>✕</button>
                       </div>
@@ -236,7 +244,7 @@ export default function Members() {
                   </tr>
                 ))}
                 {members.length === 0 && (
-                  <tr><td colSpan="10" style={{ textAlign: 'center', padding: 40, color: 'var(--faint)' }}>No members found</td></tr>
+                  <tr><td colSpan="11" style={{ textAlign: 'center', padding: 40, color: 'var(--faint)' }}>No members found</td></tr>
                 )}
               </tbody>
             </table>
