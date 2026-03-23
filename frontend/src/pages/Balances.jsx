@@ -142,11 +142,28 @@ export default function Balances() {
     fd.append('file', file);
     try {
       const r = await api.post('/balances/upload', fd);
-      toast(`${r.data.imported} records updated, ${r.data.skipped} skipped`);
-      if (r.data.errors?.length) {
-        toast(`Errors: ${r.data.errors.slice(0, 3).join(' | ')}`, 'error');
+      
+      const hasErrors = r.data.errors?.length > 0;
+      const parts = [];
+      if (r.data.imported > 0) {
+        parts.push(`${r.data.imported} record${r.data.imported !== 1 ? 's' : ''} updated`);
       }
-      await fetchBalances();
+      if (r.data.skipped > 0) {
+        parts.push(`${r.data.skipped} skipped`);
+      }
+      if (parts.length === 0) {
+        toast('No records processed', 'info');
+      } else {
+        const message = parts.join(', ');
+        toast(message + (hasErrors ? ' (see errors below)' : ''), hasErrors ? 'warning' : 'success');
+      }
+      
+      if (hasErrors) {
+        const errorMsg = r.data.errors.slice(0, 5).join('\n');
+        toast(errorMsg, 'error');
+      }
+      
+      setTimeout(() => fetchBalances(), 500);
     } catch (err) {
       toast(err.response?.data?.error || 'Upload failed', 'error');
     } finally {

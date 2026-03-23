@@ -195,9 +195,16 @@ async function uploadBalances(req, res) {
       if (hasAnyValue) imported++; else skipped++;
     }
 
+    const totalProcessed = imported + skipped;
+    const successRate = totalProcessed > 0 ? Math.round((imported / totalProcessed) * 100) : 0;
+    
     res.json({
-      message: `${imported} records updated, ${skipped} skipped`,
-      imported, skipped, errors,
+      message: `${imported} member${imported !== 1 ? 's' : ''} updated, ${skipped} skipped`,
+      imported,
+      skipped,
+      total: totalProcessed,
+      successRate,
+      errors,
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
