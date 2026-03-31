@@ -4,13 +4,10 @@ const { parse } = require('csv-parse/sync');
 // Headers that identify the member — not stored as financial data
 const IDENTITY_HEADERS = new Set(['s/n', 'month', 'l/no', 'ippis no', 'name', 'staff no']);
 
+// BEFORE
 function normalizeLabel(h) {
   return h.toLowerCase()
     .replace(/\s+/g, ' ')
-    // Remove content in parentheses and brackets for better matching
-    .replace(/\s*\(.*?\)\s*/g, '')
-    .replace(/\s*\[.*?\]\s*/g, '')
-    .replace(/\s*\{.*?\}\s*/g, '')
     .trim();
 }
 
@@ -19,10 +16,6 @@ function canonicalizeLabel(h) {
     .toLowerCase()
     .replace(/[_-]+/g, ' ')
     .replace(/\//g, ' ')
-    // Remove content in parentheses and brackets for better matching
-    .replace(/\s*\(.*?\)\s*/g, '')
-    .replace(/\s*\[.*?\]\s*/g, '')
-    .replace(/\s*\{.*?\}\s*/g, '')
     .replace(/[^a-z0-9\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
@@ -403,8 +396,9 @@ async function uploadTransCSV(req, res) {
     for (let i = 0; i < headerRow.length; i++) {
       const h = headerRow[i];
       if (!h || IDENTITY_HEADERS.has(normalizeLabel(h))) continue;
-
+      
       let colKey = resolveKey(h, labelToKey);
+      if (colKey === 'total_deduction') continue;
       if (!colKey) {
         colKey = makeKey(h).slice(0, 150) || `col_${i}`;
         newColInserts.ledgers.push(colKey);
@@ -763,8 +757,7 @@ async function getDeductions(req, res) {
       { key: 'loan_interest', label: 'LN INTEREST', enabled: true, sort_order: 9 },
       { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT', enabled: true, sort_order: 10 },
       { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM', enabled: true, sort_order: 11 },
-      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 12 },
-      { key: 'total_deductions', label: 'TOTAL DEDUCTIONS', enabled: true, sort_order: 13 }
+      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 12 }
     ];
 
     res.json({ columns, members: membersResult.rows, month: m, year: y, hasData });
@@ -986,60 +979,43 @@ async function generateNextMonth(req, res) {
       }
 
       const loanSyncs = [];
+      const bulkRows = [];
       for (const [memberId, prev] of Object.entries(memberData)) {
-        // B/F values come from previous month's C/F
+        // ...existing calculations as before...
         const savings_bf           = g(prev, 'savings_cf');
         const loan_bal_bf          = g(prev, 'loan_ledger_bal');
         const loan_int_bf          = g(prev, 'loan_int_cf');
         const comm_bal_bf          = g(prev, 'comm_bal_cf');
-
-        // Recurring amounts copied; non-recurring (new grants/additions) reset to 0
         const savings_add          = g(prev, 'savings_add');
-        const savings_add_bank     = g(prev, 'savings_add_bank');
+        const savings_add_bank     = 0;
         const savings_withdrawal   = g(prev, 'savings_withdrawal');
-        const loan_granted         = 0;  // new loans not assumed recurring
+        const loan_granted         = 0;
         const loan_repayment       = g(prev, 'loan_repayment');
-        const loan_repayment_bank  = g(prev, 'loan_repayment_bank');
+        const loan_repayment_bank  = 0;
         const loan_int_paid        = g(prev, 'loan_int_paid');
-        const loan_int_paid_bank   = g(prev, 'loan_int_paid_bank');
-        const comm_add             = 0;  // new commodity not assumed recurring
+        const loan_int_paid_bank   = 0;
+        const comm_add             = 0;
         const comm_repayment       = g(prev, 'comm_repayment');
-        const comm_repayment_bank  = g(prev, 'comm_repayment_bank');
-        const form                 = g(prev, 'form');
-        const other_charges        = g(prev, 'other_charges');
-
-        // Interest is flat-rate, calculated once when loan is issued.
-        // Only charge new interest if a new loan was granted this month (loan_granted > 0).
+        const comm_repayment_bank  = 0;
+        const form                 = 0;
+        const other_charges        = 0;
         const loan_int_charged = loan_granted > 0
           ? Math.round(loan_granted * interestRate * 100) / 100
           : 0;
-
-        // ── Cap repayments at remaining balances so payments stop when cleared ──
-
-        // Loan principal: stop deducting once loan_ledger_bal reaches 0
         const loan_balance_before = loan_bal_bf + loan_granted;
         const eff_loan_repayment      = loan_balance_before > 0 ? Math.min(loan_repayment,      loan_balance_before) : 0;
         const eff_loan_repayment_bank = loan_balance_before > 0 ? Math.min(loan_repayment_bank, Math.max(0, loan_balance_before - eff_loan_repayment)) : 0;
-
-        // Loan interest: stop deducting once loan_int_cf reaches 0
         const int_balance_before = loan_int_bf + loan_int_charged;
         const eff_loan_int_paid      = int_balance_before > 0 ? Math.min(loan_int_paid,      int_balance_before) : 0;
         const eff_loan_int_paid_bank = int_balance_before > 0 ? Math.min(loan_int_paid_bank, Math.max(0, int_balance_before - eff_loan_int_paid)) : 0;
-
-        // Commodity: stop deducting once comm_bal_cf reaches 0
         const comm_balance_before = comm_bal_bf + comm_add;
         const eff_comm_repayment      = comm_balance_before > 0 ? Math.min(comm_repayment,      comm_balance_before) : 0;
         const eff_comm_repayment_bank = comm_balance_before > 0 ? Math.min(comm_repayment_bank, Math.max(0, comm_balance_before - eff_comm_repayment)) : 0;
-
-        // C/F recalculations
         const savings_cf      = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
         const loan_ledger_bal = Math.max(0, loan_balance_before - eff_loan_repayment - eff_loan_repayment_bank);
         const loan_int_cf     = Math.max(0, int_balance_before - eff_loan_int_paid - eff_loan_int_paid_bank);
         const comm_bal_cf     = Math.max(0, comm_balance_before - eff_comm_repayment - eff_comm_repayment_bank);
-
-        // Total deduction (includes both salary and bank payments)
         const total_deduction = savings_add + savings_add_bank + eff_loan_repayment + eff_loan_repayment_bank + eff_loan_int_paid + eff_loan_int_paid_bank + eff_comm_repayment + eff_comm_repayment_bank + form + other_charges;
-
         const newData = {
           savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
           loan_bal_bf, loan_granted, loan_repayment: eff_loan_repayment, loan_repayment_bank: eff_loan_repayment_bank, loan_ledger_bal,
@@ -1047,14 +1023,8 @@ async function generateNextMonth(req, res) {
           comm_bal_bf, comm_add, comm_repayment: eff_comm_repayment, comm_repayment_bank: eff_comm_repayment_bank, comm_bal_cf,
           form, other_charges, total_deduction,
         };
-
         for (const [key, amount] of Object.entries(newData)) {
-          await client.query(`
-            INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-            VALUES ($1, $2, $3, $4, $5)
-            ON CONFLICT (member_id, column_key, month, year)
-            DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
-          `, [memberId, key, amount, tgtMonth, tgtYear]);
+          bulkRows.push([memberId, key, amount, tgtMonth, tgtYear]);
         }
         if (eff_loan_repayment + eff_loan_repayment_bank > 0 || eff_loan_int_paid + eff_loan_int_paid_bank > 0) {
           loanSyncs.push({
@@ -1064,6 +1034,18 @@ async function generateNextMonth(req, res) {
           });
         }
         generated++;
+      }
+
+      // Bulk insert all rows at once
+      if (bulkRows.length > 0) {
+        const valueStrings = bulkRows.map((_, i) => `($${i*5+1},$${i*5+2},$${i*5+3},$${i*5+4},$${i*5+5})`).join(',');
+        const flatValues = bulkRows.flat();
+        await client.query(`
+          INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+          VALUES ${valueStrings}
+          ON CONFLICT (member_id, column_key, month, year)
+          DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
+        `, flatValues);
       }
 
       // Sync generated repayments into loan tracking tables
@@ -1118,22 +1100,44 @@ async function patchMonthEntry(req, res) {
       data[key] = parseFloat(val) || 0;
     }
 
-    const g = (k) => data[k] || 0;
 
-    // Recalculate all C/F values from the updated inputs
+
+    // Map new modal keys to legacy backend keys
+    // If new key is present, copy its value to the legacy key for calculation and DB update
+    const keyMap = {
+      savings: 'savings_add',
+      savings_bank: 'savings_add_bank',
+      loan_repayment: 'loan_repayment',
+      loan_repayment_bank: 'loan_repayment_bank',
+      loan_interest: 'loan_int_paid',
+      commodity_repayment: 'comm_repayment',
+      membership_loan_form: 'form',
+      other_charges: 'other_charges',
+    };
+    for (const [newKey, legacyKey] of Object.entries(keyMap)) {
+      if (data[newKey] !== undefined) {
+        data[legacyKey] = data[newKey];
+      }
+    }
+
+    const savings_add        = data['savings_add'] || 0;
+    const savings_add_bank   = data['savings_add_bank'] || 0;
+    const loan_repayment     = data['loan_repayment'] || 0;
+    const loan_repayment_bank= data['loan_repayment_bank'] || 0;
+    const loan_int_paid      = data['loan_int_paid'] || 0;
+    const comm_repayment     = data['comm_repayment'] || 0;
+    const form               = data['form'] || 0;
+    const other_charges      = data['other_charges'] || 0;
+
+    // The rest of the calculations remain the same, using these values
+    const g = (k) => data[k] || 0;
     const savings_bf         = g('savings_bf');
-    const savings_add        = g('savings_add');
-    const savings_add_bank   = g('savings_add_bank');
     const savings_withdrawal = g('savings_withdrawal');
     const savings_cf         = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
 
     const loan_bal_bf        = g('loan_bal_bf');
     const loan_granted       = g('loan_granted');
     const loan_balance_before = loan_bal_bf + loan_granted;
-    const loan_repayment_raw  = g('loan_repayment');
-    const loan_repayment_bank_raw = g('loan_repayment_bank');
-    const loan_repayment      = loan_balance_before > 0 ? Math.min(loan_repayment_raw,      loan_balance_before) : 0;
-    const loan_repayment_bank = loan_balance_before > 0 ? Math.min(loan_repayment_bank_raw, Math.max(0, loan_balance_before - loan_repayment)) : 0;
     const loan_ledger_bal     = Math.max(0, loan_balance_before - loan_repayment - loan_repayment_bank);
 
     // Interest: charge on new loans only (flat-rate model)
@@ -1145,23 +1149,15 @@ async function patchMonthEntry(req, res) {
         })()
       : g('loan_int_charged');
     const int_balance_before  = loan_int_bf + loan_int_charged;
-    const loan_int_paid_raw   = g('loan_int_paid');
-    const loan_int_paid_bank_raw = g('loan_int_paid_bank');
-    const loan_int_paid       = int_balance_before > 0 ? Math.min(loan_int_paid_raw,      int_balance_before) : 0;
-    const loan_int_paid_bank  = int_balance_before > 0 ? Math.min(loan_int_paid_bank_raw, Math.max(0, int_balance_before - loan_int_paid)) : 0;
+    const loan_int_paid_bank  = g('loan_int_paid_bank');
     const loan_int_cf         = Math.max(0, int_balance_before - loan_int_paid - loan_int_paid_bank);
 
     const comm_bal_bf         = g('comm_bal_bf');
     const comm_add            = g('comm_add');
     const comm_balance_before = comm_bal_bf + comm_add;
-    const comm_repayment_raw  = g('comm_repayment');
-    const comm_repayment_bank_raw = g('comm_repayment_bank');
-    const comm_repayment      = comm_balance_before > 0 ? Math.min(comm_repayment_raw,      comm_balance_before) : 0;
-    const comm_repayment_bank = comm_balance_before > 0 ? Math.min(comm_repayment_bank_raw, Math.max(0, comm_balance_before - comm_repayment)) : 0;
+    const comm_repayment_bank = g('comm_repayment_bank');
     const comm_bal_cf         = Math.max(0, comm_balance_before - comm_repayment - comm_repayment_bank);
 
-    const form          = g('form');
-    const other_charges = g('other_charges');
     const total_deduction = savings_add + savings_add_bank + loan_repayment + loan_repayment_bank + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank + form + other_charges;
 
     const finalData = {
@@ -1182,7 +1178,18 @@ async function patchMonthEntry(req, res) {
     }
 
     await client.query('COMMIT');
-    res.json({ message: 'Entry updated and recalculated', data: finalData });
+    // Also return new keys for frontend compatibility
+    const newKeyMap = {
+      savings_bank: finalData.savings_add_bank,
+      savings: finalData.savings_add,
+      loan_repayment: finalData.loan_repayment,
+      loan_repayment_bank: finalData.loan_repayment_bank,
+      loan_interest: finalData.loan_int_paid,
+      commodity_repayment: finalData.comm_repayment,
+      membership_loan_form: finalData.form,
+      other_charges: finalData.other_charges,
+    };
+    res.json({ message: 'Entry updated and recalculated', data: { ...finalData, ...newKeyMap } });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

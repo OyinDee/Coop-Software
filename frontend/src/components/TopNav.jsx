@@ -8,7 +8,6 @@ const CORE_NAV = [
   { label: 'Members', to: '/members' },
   { label: 'Ledger', to: '/ledger' },
   { label: 'Loans', to: '/loans' },
-  { label: 'Savings', to: '/savings' },
 ];
 
 const REPORTS_NAV = [

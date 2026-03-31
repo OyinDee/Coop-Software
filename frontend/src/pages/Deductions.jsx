@@ -16,12 +16,12 @@ const normalizeReconKey = (value) => String(value ?? '').trim().toLowerCase();
 // Keys that represent actual salary deductions (NOT balance/BF/CF tracking columns)
 // TOTAL DEDUCTION = sum of these only
 const DEDUCTION_KEYS = new Set([
-  'savings_add', 'savings_add_bank',
-  'add_sav_during_the_month', 'add_sav_during_the_month_bank',
-  'loan_repayment', 'loan_repayment_bank',
-  'loan_int_paid', 'loan_int_paid_bank',
-  'comm_repayment', 'comm_repayment_bank',
-  'form', 'other_charges',
+  'savings',
+  'loan_repayment',
+  'loan_interest',
+  'commodity_repayment',
+  'membership_loan_form',
+  'other_charges',
 ]);
 
 const NON_CURRENCY_KEYS = new Set([
@@ -199,19 +199,14 @@ function NarrationModal({ member, month, year, onSave, onClose }) {
 
 // Editable keys admins can change for a generated month (B/F values are read-only — they come from prev C/F)
 const EDITABLE_FIELDS = [
-  { key: 'savings_add',        label: 'ADD: Savings (Salary)' },
-  { key: 'savings_add_bank',   label: 'ADD: Savings (Bank)' },
-  { key: 'savings_withdrawal', label: 'LESS: Withdrawal' },
-  { key: 'loan_granted',       label: 'ADD: New Loan Granted' },
-  { key: 'loan_repayment',     label: 'LESS: Loan Repayment (Salary)' },
-  { key: 'loan_repayment_bank',label: 'LESS: Loan Repayment (Bank)' },
-  { key: 'loan_int_paid',      label: 'LESS: Loan Interest Paid (Salary)' },
-  { key: 'loan_int_paid_bank', label: 'LESS: Loan Interest Paid (Bank)' },
-  { key: 'comm_add',           label: 'ADD: New Commodity' },
-  { key: 'comm_repayment',     label: 'LESS: Commodity Repayment (Salary)' },
-  { key: 'comm_repayment_bank',label: 'LESS: Commodity Repayment (Bank)' },
-  { key: 'form',               label: 'Form Fee' },
-  { key: 'other_charges',      label: 'Other Charges' },
+  { key: 'savings',              label: 'SAVINGS' },
+  { key: 'savings_bank',         label: 'SAVINGS (BANK)' },
+  { key: 'loan_repayment',       label: 'LOAN REPAYMENT' },
+  { key: 'loan_repayment_bank',  label: 'LOAN REPAYMENT (BANK)' },
+  { key: 'loan_interest',        label: 'LN INTEREST' },
+  { key: 'commodity_repayment',  label: 'COMMODITY REPAYMENT' },
+  { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM' },
+  { key: 'other_charges',        label: 'OTHER CHARGES' },
 ];
 
 // ── Edit month entry modal ────────────────────────────────────────────────────
@@ -240,6 +235,11 @@ function EditEntryModal({ member, month, year, onSave, onClose }) {
     }
   };
 
+  // Calculate total deduction in real time
+  const totalDeduction = Array.from(DEDUCTION_KEYS).reduce((sum, key) => {
+    return sum + (parseFloat(values[key]) || 0);
+  }, 0);
+
   return (
     <Modal title={`Edit Entry — ${member.full_name}`} onClose={onClose} width={520}>
       <div style={{ fontSize: 12, color: 'var(--muted)', marginBottom: 14 }}>
@@ -260,6 +260,9 @@ function EditEntryModal({ member, month, year, onSave, onClose }) {
             />
           </div>
         ))}
+      </div>
+      <div style={{ fontWeight: 600, color: '#b08a00', marginBottom: 10, fontSize: 15, textAlign: 'right' }}>
+        Total Deduction: {fmtNGN(totalDeduction)}
       </div>
       <div style={{ fontSize: 11, color: 'var(--faint)', marginBottom: 12, padding: '8px 10px', background: 'rgba(200,168,75,.06)', borderRadius: 4, border: '1px solid rgba(200,168,75,.15)' }}>
         Saving will recalculate Net Saving C/F, Loan Ledger Bal, Loan Interest C/F, and Commodity C/F automatically.
@@ -373,11 +376,12 @@ export default function Deductions() {
   const nextMonth = month === 12 ? 1        : month + 1;
   const nextYear  = month === 12 ? year + 1 : year;
 
-  const displayColumns = columns.filter((c) => c.key !== 'total_deduction');
+  // Remove total_deduction and duplicate info columns from display columns
+  const INFO_KEYS = new Set(['ledger_no', 'full_name', 'staff_no', 'gifmis_no']);
+  const displayColumns = columns.filter((c) => c.key !== 'total_deduction' && !INFO_KEYS.has(c.key));
 
   function rowTotal(m) {
-    const stored = parseFloat(m.total_deduction);
-    if (!isNaN(stored)) return stored;
+    // Always compute total deduction from actual deduction keys, ignore CSV total_deduction column
     return displayColumns.reduce((s, c) => {
       if (!DEDUCTION_KEYS.has(c.key)) return s;
       return s + (parseFloat(m[c.key]) || 0);
@@ -545,7 +549,7 @@ export default function Deductions() {
             Export Detailed CSV
           </button>
           <button className="btn btn-primary" onClick={exportReconciliationCSV} disabled={loading || !hasData}>
-            Export Reconciliation CSV
+            Export Payroll CSV
           </button>
           {hasData && (
             <button className="btn btn-secondary" onClick={() => setUploadingReconciliation(true)}>

@@ -218,7 +218,7 @@ export default function Members() {
                   <th>Bank</th>
                   <th>Acct. No</th>
                   <th>Next of kin</th>
-                  <th>Relation</th>
+                  <th>Relationship</th>
                   <th></th>
                 </tr>
               </thead>
