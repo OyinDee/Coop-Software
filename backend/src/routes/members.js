@@ -12,6 +12,8 @@ const {
   getMemberLedger,
   getDeactivatedMembers,
   reactivateMember,
+  emailMemberMonthlyReport,
+  emailMonthlyReports,
 } = require('../controllers/members');
 const authenticate = require('../middleware/auth');
 
@@ -21,7 +23,9 @@ router.use(authenticate);
 
 router.get('/', getMembers);
 router.get('/deactivated', getDeactivatedMembers); // Must come before /:id
+router.post('/reports/email-monthly', emailMonthlyReports);
 router.get('/:id/ledger', getMemberLedger);
+router.post('/:id/report/email', emailMemberMonthlyReport);
 router.get('/:id', getMember);
 router.post('/', createMember);
 router.put('/:id', updateMember);

@@ -4,6 +4,7 @@ import Layout from '../components/Layout';
 import Pagination from '../components/Pagination';
 import api from '../api';
 import { fmtNGN } from '../utils/format';
+import { useToast } from '../context/ToastContext';
 
 const PAGE_SIZE = 25;
 
@@ -13,7 +14,11 @@ export default function PersonalLedger() {
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [emailMonth, setEmailMonth] = useState(new Date().getMonth() + 1);
+  const [emailYear, setEmailYear] = useState(new Date().getFullYear());
+  const [sendingReports, setSendingReports] = useState(false);
   const navigate = useNavigate();
+  const toast = useToast();
 
   const load = (q = '') => {
     setLoading(true);
@@ -33,12 +38,48 @@ export default function PersonalLedger() {
   const pageStart = (page - 1) * PAGE_SIZE;
   const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
+  const sendMonthlyReports = async () => {
+    if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to all members with email addresses?`)) return;
+    setSendingReports(true);
+    try {
+      const response = await api.post('/members/reports/email-monthly', {
+        month: emailMonth,
+        year: emailYear,
+      });
+      const data = response.data;
+      toast(`Reports sent: ${data.sent_count}, skipped: ${data.skipped_count}, failed: ${data.failed_count}`);
+    } catch (err) {
+      toast(err.response?.data?.error || 'Failed to send reports', 'error');
+    } finally {
+      setSendingReports(false);
+    }
+  };
+
   return (
     <Layout title="Personal Ledger">
       <div className="page-header">
         <div>
           <div className="page-eyebrow">Select a member</div>
           <div className="page-title">Personal Ledger</div>
+        </div>
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => setEmailMonth(Number(e.target.value))}>
+            {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+              <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+            ))}
+          </select>
+          <input
+            className="form-input"
+            type="number"
+            min="2000"
+            max="9999"
+            style={{ height: 34, width: 92 }}
+            value={emailYear}
+            onChange={(e) => setEmailYear(Number(e.target.value || new Date().getFullYear()))}
+          />
+          <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports}>
+            {sendingReports ? 'Sending...' : 'Email Monthly Reports'}
+          </button>
         </div>
       </div>
 

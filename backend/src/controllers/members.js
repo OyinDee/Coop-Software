@@ -1,9 +1,220 @@
 const db = require('../db');
+const nodemailer = require('nodemailer');
 // loans table needs optional description column – add it if it doesn't exist
 // (run once on startup, harmless if already present)
 db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
 
 const { parse } = require('csv-parse/sync');
+
+const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+
+function resolveMonthYear(monthRaw, yearRaw) {
+  const now = new Date();
+  const month = Number.isInteger(Number(monthRaw)) ? Number(monthRaw) : now.getMonth() + 1;
+  const year = Number.isInteger(Number(yearRaw)) ? Number(yearRaw) : now.getFullYear();
+  if (month < 1 || month > 12) {
+    return { error: 'month must be between 1 and 12' };
+  }
+  if (year < 2000 || year > 9999) {
+    return { error: 'year must be a valid 4-digit year' };
+  }
+  return { month, year };
+}
+
+function getMailer() {
+  const host = process.env.SMTP_HOST;
+  const port = parseInt(process.env.SMTP_PORT || '587', 10);
+  const user = process.env.SMTP_USER;
+  const pass = process.env.SMTP_PASS;
+  const from = process.env.SMTP_FROM || user;
+
+  if (!host || !port || !user || !pass || !from) {
+    return { error: 'Missing SMTP configuration. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.' };
+  }
+
+  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
+  const transporter = nodemailer.createTransport({
+    host,
+    port,
+    secure,
+    auth: { user, pass },
+  });
+
+  return { transporter, from };
+}
+
+async function getMonthlyReport(memberId, month, year) {
+  const memberRes = await db.query(
+    `SELECT id, full_name, ledger_no, staff_no, email FROM members WHERE id=$1`,
+    [memberId]
+  );
+  const member = memberRes.rows[0];
+  if (!member) {
+    return null;
+  }
+
+  const transRes = await db.query(
+    `SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3`,
+    [memberId, month, year]
+  );
+  const sharesRes = await db.query(
+    `SELECT COALESCE(SUM(amount), 0) AS total FROM shares WHERE member_id=$1 AND month=$2 AND year=$3`,
+    [memberId, month, year]
+  );
+
+  const values = {};
+  for (const row of transRes.rows) {
+    values[row.column_key] = parseFloat(row.amount) || 0;
+  }
+
+  const shares = parseFloat(sharesRes.rows[0]?.total) || 0;
+  const report = {
+    savings_withdrawal: values.savings_withdrawal || 0,
+    savings_add: values.savings_add || 0,
+    savings_add_bank: values.savings_add_bank || 0,
+    shares,
+    loan_granted: values.loan_granted || 0,
+    loan_int_charged: values.loan_int_charged || 0,
+    loan_repayment: values.loan_repayment || 0,
+    loan_repayment_bank: values.loan_repayment_bank || 0,
+    loan_int_paid: values.loan_int_paid || 0,
+    comm_add: values.comm_add || 0,
+    comm_repayment: values.comm_repayment || 0,
+    comm_repayment_bank: values.comm_repayment_bank || 0,
+    form: values.form || 0,
+    other_charges: values.other_charges || 0,
+    total_deduction: values.total_deduction || 0,
+    savings_cf: values.savings_cf || 0,
+    loan_ledger_bal: values.loan_ledger_bal || 0,
+    loan_int_cf: values.loan_int_cf || 0,
+    comm_bal_cf: values.comm_bal_cf || 0,
+  };
+
+  const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
+  const subject = `Monthly Cooperative Report - ${subjectPeriod}`;
+
+  const csvHeaders = [
+    'MONTH',
+    'MEMBER_NAME',
+    'LEDGER_NO',
+    'STAFF_NO',
+    'SAVINGS_WITHDRAWAL',
+    'SAVINGS_ADD',
+    'SAVINGS_ADD_BANK',
+    'SHARES',
+    'LOAN_GRANTED',
+    'LOAN_INTEREST_CHARGED',
+    'LOAN_REPAYMENT',
+    'LOAN_REPAYMENT_BANK',
+    'LOAN_INTEREST_PAID',
+    'COMMODITY_ADD',
+    'COMMODITY_REPAYMENT',
+    'COMMODITY_REPAYMENT_BANK',
+    'FORM',
+    'OTHER_CHARGES',
+    'TOTAL_DEDUCTION',
+    'SAVINGS_BALANCE_CF',
+    'LOAN_BALANCE_CF',
+    'LOAN_INTEREST_BALANCE_CF',
+    'COMMODITY_BALANCE_CF'
+  ];
+
+  const csvData = [
+    subjectPeriod,
+    member.full_name || '',
+    member.ledger_no || '',
+    member.staff_no || '',
+    report.savings_withdrawal,
+    report.savings_add,
+    report.savings_add_bank,
+    report.shares,
+    report.loan_granted,
+    report.loan_int_charged,
+    report.loan_repayment,
+    report.loan_repayment_bank,
+    report.loan_int_paid,
+    report.comm_add,
+    report.comm_repayment,
+    report.comm_repayment_bank,
+    report.form,
+    report.other_charges,
+    report.total_deduction,
+    report.savings_cf,
+    report.loan_ledger_bal,
+    report.loan_int_cf,
+    report.comm_bal_cf,
+  ];
+
+  const csvContent = `${csvHeaders.join(',')}\n${csvData.join(',')}`;
+
+  const html = `
+    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111;">
+      <h2 style="margin: 0 0 12px;">Monthly Cooperative Report</h2>
+      <p style="margin: 0 0 10px;">Dear ${member.full_name || 'Member'},</p>
+      <p style="margin: 0 0 16px;">Your report for <strong>${subjectPeriod}</strong> is attached as CSV.</p>
+      <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
+        <tr><td style="border: 1px solid #ddd; padding: 8px;">Savings Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.savings_cf.toFixed(2)}</td></tr>
+        <tr><td style="border: 1px solid #ddd; padding: 8px;">Loan Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.loan_ledger_bal.toFixed(2)}</td></tr>
+        <tr><td style="border: 1px solid #ddd; padding: 8px;">Interest Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.loan_int_cf.toFixed(2)}</td></tr>
+        <tr><td style="border: 1px solid #ddd; padding: 8px;">Commodity Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.comm_bal_cf.toFixed(2)}</td></tr>
+        <tr><td style="border: 1px solid #ddd; padding: 8px;">Total Deduction</td><td style="border: 1px solid #ddd; padding: 8px;">${report.total_deduction.toFixed(2)}</td></tr>
+      </table>
+    </div>
+  `;
+
+  const text = [
+    `Monthly Cooperative Report - ${subjectPeriod}`,
+    `Member: ${member.full_name || ''}`,
+    `Ledger: ${member.ledger_no || ''}`,
+    `Savings Balance C/F: ${report.savings_cf.toFixed(2)}`,
+    `Loan Balance C/F: ${report.loan_ledger_bal.toFixed(2)}`,
+    `Interest Balance C/F: ${report.loan_int_cf.toFixed(2)}`,
+    `Commodity Balance C/F: ${report.comm_bal_cf.toFixed(2)}`,
+    `Total Deduction: ${report.total_deduction.toFixed(2)}`,
+  ].join('\n');
+
+  return {
+    member,
+    subject,
+    text,
+    html,
+    attachmentName: `${member.ledger_no || member.id}-monthly-report-${year}-${String(month).padStart(2, '0')}.csv`,
+    attachmentContent: csvContent,
+  };
+}
+
+async function sendSingleMemberMonthlyReport(memberId, month, year, mailer) {
+  const reportPayload = await getMonthlyReport(memberId, month, year);
+  if (!reportPayload) {
+    return { status: 'failed', reason: 'member not found' };
+  }
+
+  const email = (reportPayload.member.email || '').trim();
+  if (!email) {
+    return { status: 'skipped', reason: 'member has no email' };
+  }
+
+  await mailer.transporter.sendMail({
+    from: mailer.from,
+    to: email,
+    subject: reportPayload.subject,
+    text: reportPayload.text,
+    html: reportPayload.html,
+    attachments: [
+      {
+        filename: reportPayload.attachmentName,
+        content: reportPayload.attachmentContent,
+      },
+    ],
+  });
+
+  return {
+    status: 'sent',
+    member_id: reportPayload.member.id,
+    ledger_no: reportPayload.member.ledger_no,
+    email,
+  };
+}
 
 async function getMembers(req, res) {
   const { search, page = 1, limit = 100 } = req.query;
@@ -634,8 +845,107 @@ async function reactivateMember(req, res) {
   }
 }
 
+async function emailMemberMonthlyReport(req, res) {
+  const memberId = parseInt(req.params.id, 10);
+  if (!memberId) {
+    return res.status(400).json({ error: 'Invalid member id' });
+  }
+
+  const resolved = resolveMonthYear(req.body.month, req.body.year);
+  if (resolved.error) {
+    return res.status(400).json({ error: resolved.error });
+  }
+  const { month, year } = resolved;
+
+  const mailer = getMailer();
+  if (mailer.error) {
+    return res.status(500).json({ error: mailer.error });
+  }
+
+  try {
+    const result = await sendSingleMemberMonthlyReport(memberId, month, year, mailer);
+    if (result.status === 'failed') {
+      return res.status(404).json({ error: result.reason });
+    }
+    if (result.status === 'skipped') {
+      return res.status(400).json({ error: result.reason });
+    }
+    res.json({ ok: true, month, year, result });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
+async function emailMonthlyReports(req, res) {
+  const resolved = resolveMonthYear(req.body.month, req.body.year);
+  if (resolved.error) {
+    return res.status(400).json({ error: resolved.error });
+  }
+  const { month, year } = resolved;
+
+  const mailer = getMailer();
+  if (mailer.error) {
+    return res.status(500).json({ error: mailer.error });
+  }
+
+  try {
+    let memberRows;
+    if (Array.isArray(req.body.member_ids) && req.body.member_ids.length > 0) {
+      const memberIds = req.body.member_ids
+        .map((v) => parseInt(v, 10))
+        .filter((v) => Number.isInteger(v) && v > 0);
+
+      if (!memberIds.length) {
+        return res.status(400).json({ error: 'member_ids must contain valid integer ids' });
+      }
+
+      const scoped = await db.query(
+        `SELECT id FROM members WHERE id = ANY($1::int[]) ORDER BY ledger_no`,
+        [memberIds]
+      );
+      memberRows = scoped.rows;
+    } else {
+      const allMembers = await db.query(
+        `SELECT id FROM members WHERE is_active = TRUE ORDER BY ledger_no`
+      );
+      memberRows = allMembers.rows;
+    }
+
+    const sent = [];
+    const skipped = [];
+    const failed = [];
+
+    for (const row of memberRows) {
+      try {
+        const result = await sendSingleMemberMonthlyReport(row.id, month, year, mailer);
+        if (result.status === 'sent') sent.push(result);
+        if (result.status === 'skipped') skipped.push({ member_id: row.id, reason: result.reason });
+        if (result.status === 'failed') failed.push({ member_id: row.id, reason: result.reason });
+      } catch (err) {
+        failed.push({ member_id: row.id, reason: err.message });
+      }
+    }
+
+    res.json({
+      ok: true,
+      month,
+      year,
+      total: memberRows.length,
+      sent_count: sent.length,
+      skipped_count: skipped.length,
+      failed_count: failed.length,
+      sent,
+      skipped,
+      failed,
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = { 
   getMembers, getMember, createMember, updateMember, deleteMember, 
   importCSV, importBalances, getMemberLedger,
-  getDeactivatedMembers, reactivateMember
+  getDeactivatedMembers, reactivateMember,
+  emailMemberMonthlyReport, emailMonthlyReports
 };

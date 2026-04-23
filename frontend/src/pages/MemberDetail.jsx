@@ -34,6 +34,9 @@ export default function MemberDetail() {
   const [savingsForm, setSavingsForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '' });
   const [commOpen, setCommOpen] = useState(false);
   const [commForm, setCommForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
+  const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
+  const [reportYear, setReportYear] = useState(new Date().getFullYear());
+  const [sendingReport, setSendingReport] = useState(false);
 
   // Ledger state
   const [ledger, setLedger]       = useState(null);
@@ -185,6 +188,26 @@ export default function MemberDetail() {
     URL.revokeObjectURL(a.href);
   };
 
+  const handleSendMemberReport = async () => {
+    if (!member?.email) {
+      toast('Member has no email address', 'error');
+      return;
+    }
+    if (!window.confirm(`Send ${MONTH_LABELS[reportMonth - 1]} ${reportYear} report to ${member.email}?`)) return;
+    setSendingReport(true);
+    try {
+      await api.post(`/members/${id}/report/email`, {
+        month: reportMonth,
+        year: reportYear,
+      });
+      toast(`Monthly report sent to ${member.email}`);
+    } catch (err) {
+      toast(err.response?.data?.error || 'Failed to send report', 'error');
+    } finally {
+      setSendingReport(false);
+    }
+  };
+
   if (loading) return <Layout title="Personal Ledger"><div style={{ color: 'var(--muted)', padding: 40, textAlign: 'center' }}>Loading...</div></Layout>;
 
   const member = data?.member;
@@ -314,6 +337,26 @@ export default function MemberDetail() {
           {parseInt(member.active_loans) > 0 && (
             <span className="badge badge-red">{member.active_loans} Active Loan{member.active_loans !== '1' ? 's' : ''}</span>
           )}
+          <select
+            className="form-input"
+            style={{ width: 72, height: 30, fontSize: 12, padding: '0 6px' }}
+            value={reportMonth}
+            onChange={(e) => setReportMonth(Number(e.target.value))}
+          >
+            {MONTH_LABELS.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+          <input
+            className="form-input"
+            type="number"
+            min="2000"
+            max="9999"
+            style={{ width: 84, height: 30, fontSize: 12, padding: '0 6px' }}
+            value={reportYear}
+            onChange={(e) => setReportYear(Number(e.target.value || new Date().getFullYear()))}
+          />
+          <button className="btn btn-ghost btn-sm" onClick={handleSendMemberReport} disabled={sendingReport}>
+            {sendingReport ? 'Sending...' : 'Email Report'}
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={openEditMember}>Edit</button>
         </div>
       </div>

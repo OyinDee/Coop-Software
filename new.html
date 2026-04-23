@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Coop Finance Manager</title>
+<style>
+:root{--bg:#f0ede8;--sur:#fff;--sur2:#f7f5f2;--bdr:#ddd9d0;--bdr2:#c8c4bb;--txt:#18170f;--txt2:#5c5a52;--txt3:#9c9a92;--acc:#1b56c8;--acc-bg:#eaf0fb;--grn:#166b3a;--grn-bg:#e8f5ee;--red:#c0261d;--red-bg:#fdecea;--amb:#7a5200;--amb-bg:#fdf4e0;--r:10px;--rs:6px}
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',system-ui,sans-serif;background:var(--bg);color:var(--txt);font-size:14px}
+.shell{display:flex;flex-direction:column;min-height:100vh}
+.top{background:var(--txt);color:#fff;padding:0 18px;display:flex;align-items:center;gap:12px;height:50px;flex-shrink:0;flex-wrap:wrap}
+.top h1{font-size:14px;font-weight:700;white-space:nowrap}
+.tr{margin-left:auto;display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+.ic{display:flex;align-items:center;gap:6px;background:rgba(255,255,255,.1);border-radius:var(--rs);padding:4px 10px}
+.ic label{font-size:11px;opacity:.7;white-space:nowrap}
+.ic input{width:55px;background:rgba(255,255,255,.15);border:1px solid rgba(255,255,255,.3);border-radius:4px;color:#fff;padding:3px 6px;font-size:13px;text-align:center}
+.ic input:focus{outline:none;background:rgba(255,255,255,.25)}
+.tabs{background:var(--sur);border-bottom:1px solid var(--bdr);display:flex;padding:0 18px;flex-wrap:wrap;flex-shrink:0}
+.tab{padding:10px 14px;font-size:13px;font-weight:500;cursor:pointer;border:none;background:none;color:var(--txt2);border-bottom:2px solid transparent;margin-bottom:-1px;transition:all .15s;white-space:nowrap}
+.tab:hover{color:var(--txt)}.tab.on{color:var(--acc);border-bottom-color:var(--acc)}
+.cnt{padding:16px 18px;flex:1;max-width:1800px;width:100%;margin:0 auto}
+.card{background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r);padding:14px 16px;margin-bottom:12px}
+.ct{font-size:13px;font-weight:700;margin-bottom:10px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.mr{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:9px;margin-bottom:12px}
+.mc{background:var(--sur2);border:1px solid var(--bdr);border-radius:var(--rs);padding:10px 13px}
+.mc .ml{font-size:11px;color:var(--txt3);margin-bottom:3px}.mc .mv{font-size:15px;font-weight:700}
+.mv.g{color:var(--grn)}.mv.b{color:var(--acc)}.mv.r{color:var(--red)}.mv.a{color:var(--amb)}
+.fg{display:grid;gap:8px;margin-bottom:8px}
+.f2{grid-template-columns:1fr 1fr}.f3{grid-template-columns:1fr 1fr 1fr}.f4{grid-template-columns:1fr 1fr 1fr 1fr}.f5{grid-template-columns:1fr 1fr 1fr 1fr 1fr}
+.fi{display:flex;flex-direction:column;gap:3px}
+.fi label{font-size:10px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.05em}
+input,select{width:100%;padding:6px 8px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);color:var(--txt);font-size:13px;font-family:inherit;transition:border-color .15s}
+input:focus,select:focus{outline:none;border-color:var(--acc);box-shadow:0 0 0 2px rgba(27,86,200,.1)}
+input[readonly]{background:var(--sur2);color:var(--txt2)}
+.btn{display:inline-flex;align-items:center;gap:5px;padding:6px 13px;border-radius:var(--rs);cursor:pointer;font-size:13px;font-weight:500;font-family:inherit;border:1px solid var(--bdr2);background:var(--sur);color:var(--txt);transition:all .15s;white-space:nowrap}
+.btn:hover{background:var(--sur2)}.btn:active{transform:scale(.98)}
+.btn.p{background:var(--acc);color:#fff;border-color:var(--acc)}.btn.p:hover{background:#1545a8}
+.btn.g{background:var(--grn-bg);color:var(--grn);border-color:var(--grn)}
+.btn.r{background:var(--red-bg);color:var(--red);border-color:var(--red)}
+.btn.a{background:var(--amb-bg);color:var(--amb);border-color:var(--amb)}
+.btn.sm{padding:3px 8px;font-size:11px}
+.brow{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center}
+.tw{overflow-x:auto;border:1px solid var(--bdr);border-radius:var(--r);background:var(--sur)}
+.ts{max-height:460px;overflow-y:auto}
+table{width:100%;border-collapse:collapse;font-size:11.5px}
+thead th{background:var(--sur2);padding:7px 8px;text-align:left;font-size:9.5px;font-weight:700;color:var(--txt2);text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid var(--bdr);white-space:nowrap;position:sticky;top:0;z-index:2}
+td{padding:6px 8px;border-bottom:1px solid var(--bdr);vertical-align:middle}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#fafaf8}
+.n{font-variant-numeric:tabular-nums;text-align:right;font-family:'Courier New',monospace;font-size:11px}
+.n.g{color:var(--grn)}.n.r2{color:var(--red)}.n.b{font-weight:700}
+.bdg{display:inline-block;padding:1px 7px;border-radius:99px;font-size:9.5px;font-weight:700;white-space:nowrap}
+.bdg.loan{background:var(--acc-bg);color:var(--acc)}.bdg.noloan{background:var(--sur2);color:var(--txt3);border:1px solid var(--bdr)}
+.bdg.comm{background:var(--grn-bg);color:var(--grn)}.bdg.oved{background:var(--red-bg);color:var(--red)}
+.bdg.dp{background:var(--grn-bg);color:var(--grn)}.bdg.dn{background:var(--red-bg);color:var(--red)}.bdg.dz{background:var(--sur2);color:var(--txt3)}
+.info{background:var(--acc-bg);border:1px solid #b8caef;border-radius:var(--rs);padding:8px 12px;font-size:12.5px;color:#1a3a7a;margin-bottom:10px}
+.ok{background:var(--grn-bg);border:1px solid #a0d4b8;border-radius:var(--rs);padding:8px 12px;font-size:12.5px;color:var(--grn);margin-bottom:10px}
+.warn{background:var(--amb-bg);border:1px solid #e0c070;border-radius:var(--rs);padding:8px 12px;font-size:12.5px;color:var(--amb);margin-bottom:10px}
+.pnl{display:none}.pnl.on{display:block}
+.mnav{display:flex;align-items:center;gap:8px;background:var(--sur);border:1px solid var(--bdr);border-radius:var(--r);padding:9px 13px;margin-bottom:12px;flex-wrap:wrap}
+.mlbl{font-size:15px;font-weight:700;min-width:170px;text-align:center}
+.toolbar{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+.sb{position:relative;flex:1;min-width:180px;max-width:340px}
+.sb input{padding-left:28px}
+.sb::before{content:'⌕';position:absolute;left:8px;top:50%;transform:translateY(-50%);font-size:16px;color:var(--txt3);pointer-events:none;line-height:1}
+.pgr{display:inline-flex;align-items:center;gap:5px;margin-left:auto}
+.pgr button{padding:3px 9px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur);cursor:pointer;font-size:12px}
+.pgr button:hover{background:var(--sur2)}.pgr button:disabled{opacity:.35;cursor:default}
+.pgr .pi{font-size:12px;color:var(--txt2);white-space:nowrap}
+.pp{width:65px}
+.rcard{border:1px solid var(--bdr);border-radius:var(--rs);padding:10px 12px;margin-bottom:7px;background:var(--sur)}
+.rcard.bad{border-color:#e0b8b8;background:var(--red-bg)}.rcard.ok2{border-color:#a0d4b8;background:var(--grn-bg)}.rcard.over{border-color:#b8caef;background:var(--acc-bg)}
+.rname{font-weight:700;font-size:13px}
+.rnums{display:flex;gap:12px;margin-top:3px;font-size:11.5px;color:var(--txt2);flex-wrap:wrap}
+.ract{display:flex;gap:7px;margin-top:8px;align-items:center;flex-wrap:wrap}
+.ract label{font-size:12px;font-weight:600;color:var(--txt2)}
+.uz{border:2px dashed var(--bdr2);border-radius:var(--r);padding:16px;text-align:center;cursor:pointer;transition:all .2s;background:var(--sur2)}
+.uz:hover,.uz.drag{border-color:var(--acc);background:var(--acc-bg)}
+.uz input[type=file]{display:none}
+.uz p{font-size:12px;color:var(--txt2);margin-top:4px}
+.uz strong{color:var(--acc);font-size:13px}
+.empty{text-align:center;padding:30px;color:var(--txt3);font-size:13px}
+.ov{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:100;align-items:center;justify-content:center}
+.ov.on{display:flex}
+.modal{background:var(--sur);border-radius:var(--r);padding:20px;width:540px;max-width:96vw;box-shadow:0 8px 40px rgba(0,0,0,.2);max-height:90vh;overflow-y:auto}
+.modal h2{font-size:15px;font-weight:700;margin-bottom:12px}
+.mc2{float:right;cursor:pointer;font-size:18px;line-height:1;opacity:.5}.mc2:hover{opacity:1}
+.trow{display:flex;gap:5px;margin-bottom:9px}
+.tbtn{flex:1;padding:7px;border:1px solid var(--bdr2);border-radius:var(--rs);background:var(--sur2);cursor:pointer;font-size:12.5px;font-weight:500;text-align:center;transition:all .15s}
+.tbtn.on{background:var(--acc);color:#fff;border-color:var(--acc)}
+.rf-badge{background:#fff3cd;color:#7a5200;border:1px solid #e0c070;border-radius:99px;font-size:9.5px;font-weight:700;padding:1px 6px;white-space:nowrap}
+</style>
+</head>
+<body>
+<div class="shell">
+<div class="top">
+  <h1>&#9670; Coop Society Finance Manager</h1>
+  <div class="tr">
+    <div class="ic"><label>Default Interest Rate % on new grants:</label><input type="number" id="g-rate" value="5" step="0.1" min="0"></div>
+    <span id="top-month" style="font-size:12px;opacity:.55"></span>
+  </div>
+</div>
+<div class="tabs">
+  <button class="tab on" onclick="goTab('members')">Members</button>
+  <button class="tab" onclick="goTab('ledger')">Monthly Ledger</button>
+  <button class="tab" onclick="goTab('recon')">Payroll Reconciliation</button>
+  <button class="tab" onclick="goTab('history')">History</button>
+</div>
+<div class="cnt">
+
+<!-- MEMBERS -->
+<div class="pnl on" id="pnl-members">
+  <div class="card">
+    <div class="ct">Add Single Member</div>
+    <div class="fg f5">
+      <div class="fi"><label>L/No</label><input id="m-lno" placeholder="M0001"></div>
+      <div class="fi"><label>Staff No</label><input id="m-sno" placeholder="SS0001"></div>
+      <div class="fi"><label>Full Name</label><input id="m-name" placeholder="SURNAME FIRSTNAME"></div>
+      <div class="fi"><label>Monthly Savings &#8358;</label><input id="m-ms" type="number" placeholder="5000"></div>
+      <div class="fi"><label>Savings B/F &#8358;</label><input id="m-sbf" type="number" placeholder="0"></div>
+    </div>
+    <div class="fg f5">
+      <div class="fi"><label>Loan Prin B/F &#8358;</label><input id="m-lbf" type="number" placeholder="0"></div>
+      <div class="fi"><label>Loan Months Left</label><input id="m-lm" type="number" placeholder="0" title="0 = no schedule, balance carries unchanged"></div>
+      <div class="fi"><label>Loan Interest B/F &#8358;</label><input id="m-libf" type="number" placeholder="0"></div>
+      <div class="fi"><label>Comm/GAD B/F &#8358;</label><input id="m-cbf" type="number" placeholder="0"></div>
+      <div class="fi"><label>Comm Months Left</label><input id="m-cm" type="number" placeholder="0"></div>
+    </div>
+    <div class="fg f4">
+      <div class="fi"><label>Form &#8358;</label><input id="m-form" type="number" placeholder="0"></div>
+      <div class="fi"><label>Other Charges &#8358;</label><input id="m-other" type="number" placeholder="0"></div>
+      <div class="fi" style="align-self:end"><button class="btn p" onclick="addMember()">+ Add Member</button></div>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ct">Import from Excel (.xlsx) or CSV
+      <button class="btn sm" style="margin-left:auto" onclick="dlTpl('members')">&#8659; CSV Template</button>
+    </div>
+    <div class="info">
+      <strong>Excel upload:</strong> Upload your spreadsheet directly — the app extracts all columns automatically (Savings B/F, Loan B/F, Interest B/F, Commodity B/F, months left, form, other, grants, refunds).<br>
+      <strong>CSV upload:</strong> columns: <code>lno, staffno, name, monthly_savings, savings_bf, loan_prin_bf, loan_months_left, loan_int_bf, comm_bf, comm_months_left, form, other_charges</code>
+    </div>
+    <div class="fg f2">
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--txt2)">Upload Excel (.xlsx)</div>
+        <div class="uz" id="uz-xlsx" onclick="document.getElementById('fi-xlsx').click()" ondragover="doDrag(event,'uz-xlsx')" ondrop="doDropX(event)" ondragleave="undrag('uz-xlsx')">
+          <input type="file" id="fi-xlsx" accept=".xlsx,.xls" onchange="importXLSX(this)">
+          <strong>Click or drag .xlsx file here</strong>
+          <p>Extracts all fields from your spreadsheet format</p>
+        </div>
+      </div>
+      <div>
+        <div style="font-size:12px;font-weight:600;margin-bottom:6px;color:var(--txt2)">Upload CSV</div>
+        <div class="uz" id="uz-csv" onclick="document.getElementById('fi-csv').click()" ondragover="doDrag(event,'uz-csv')" ondrop="doDrop(event,'csv')" ondragleave="undrag('uz-csv')">
+          <input type="file" id="fi-csv" accept=".csv" onchange="importCSV('members',this)">
+          <strong>Click or drag CSV file here</strong>
+          <p>Header row auto-detected. Supports 700+ members.</p>
+        </div>
+      </div>
+    </div>
+    <div id="msg-members" style="margin-top:8px"></div>
+  </div>
+  <div class="toolbar">
+    <div class="ct" style="margin-bottom:0">Members <span id="m-cnt" style="background:var(--acc-bg);color:var(--acc);font-size:11px;padding:2px 8px;border-radius:99px;font-weight:700;margin-left:4px">0</span></div>
+    <div class="sb"><input type="text" id="m-search" placeholder="Search name, staff no, L/No..." oninput="mPg=1;renderMembers()"></div>
+    <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--txt2)">Per page: <select class="pp" id="m-pp" onchange="mPg=1;renderMembers()"><option>25</option><option>50</option><option>100</option><option>200</option></select></div>
+    <button class="btn g sm" onclick="exportDeductions()">&#8659; Export Deductions CSV</button>
+  </div>
+  <div class="tw"><div class="ts">
+    <table><thead><tr><th>#</th><th>L/No</th><th>Staff No</th><th>Name</th><th>Mthly Sav</th><th>Savings B/F</th><th>Loan Prin B/F</th><th>Ln Mths</th><th>Loan Int B/F</th><th>Comm B/F</th><th>Comm Mths</th><th>Form</th><th>Other</th><th></th></tr></thead>
+    <tbody id="m-tbody"></tbody></table>
+  </div></div>
+  <div id="m-pgr" style="margin-top:7px;display:flex;justify-content:flex-end"></div>
+</div>
+
+<!-- LEDGER -->
+<div class="pnl" id="pnl-ledger">
+  <div class="mnav">
+    <button class="btn" onclick="ldgPrev()">&#8592;</button>
+    <span class="mlbl" id="ldg-lbl"></span>
+    <button class="btn" onclick="ldgNext()">&#8594;</button>
+    <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn a" onclick="showModal('grant')">+ Grant</button>
+      <button class="btn r" onclick="showModal('refund')">&#8617; Refund</button>
+      <button class="btn g sm" onclick="exportDeductions()">&#8659; CSV</button>
+      <button class="btn p" onclick="closeMonth()">&#10003; Close Month</button>
+    </div>
+  </div>
+  <div class="mr" id="ldg-mr"></div>
+  <div class="info" id="ldg-closed" style="display:none">This month is <strong>closed (locked)</strong>. Viewing snapshot. Navigate to the open month to edit.</div>
+  <div class="toolbar">
+    <div class="sb"><input type="text" id="ldg-search" placeholder="Search member..." oninput="lPg=1;renderLedger()"></div>
+    <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--txt2)">Per page: <select class="pp" id="ldg-pp" onchange="lPg=1;renderLedger()"><option>25</option><option>50</option><option>100</option><option>200</option></select></div>
+  </div>
+  <div class="tw"><div class="ts">
+    <table><thead><tr>
+      <th>Name</th><th>Staff No</th>
+      <th class="n">Sav B/F</th><th class="n">+Sav</th><th class="n">Sav C/F</th>
+      <th class="n">Loan B/F</th><th class="n">+Granted</th><th>Mths</th><th class="n">-Repay</th><th class="n">+Refund</th><th class="n">Loan C/F</th><th>Status</th>
+      <th class="n">Int B/F</th><th class="n">+Charged</th><th class="n">-Int Paid</th><th class="n">+Int Rfnd</th><th class="n">Int C/F</th>
+      <th class="n">Comm B/F</th><th class="n">+Comm</th><th>Mths</th><th class="n">-Repay</th><th class="n">+Rfnd</th><th class="n">Comm C/F</th><th>Status</th>
+      <th class="n">Form</th><th class="n">Other</th><th class="n b">Total Deduction</th>
+    </tr></thead>
+    <tbody id="ldg-tbody"></tbody></table>
+  </div></div>
+  <div id="ldg-pgr" style="margin-top:7px;display:flex;justify-content:flex-end"></div>
+</div>
+
+<!-- RECON -->
+<div class="pnl" id="pnl-recon">
+  <div class="mnav">
+    <button class="btn" onclick="recPrev()">&#8592;</button>
+    <span class="mlbl" id="rec-lbl"></span>
+    <button class="btn" onclick="recNext()">&#8594;</button>
+    <div style="margin-left:auto;display:flex;gap:6px;flex-wrap:wrap">
+      <button class="btn sm" onclick="dlTpl('payroll')">&#8659; Payroll Template</button>
+      <button class="btn p" onclick="runRecon()">Run Reconciliation</button>
+    </div>
+  </div>
+  <div class="card">
+    <div class="ct">Upload Payroll CSV — 3 columns: Staff No | Name | Amount</div>
+    <div class="info">Same 3-column format as "PASTE PAYROLL DEDUCTION HERE" in the spreadsheet. Header row auto-detected.</div>
+    <div class="uz" id="uz-pay" onclick="document.getElementById('fi-pay').click()" ondragover="doDrag(event,'uz-pay')" ondrop="doDrop(event,'payroll')" ondragleave="undrag('uz-pay')">
+      <input type="file" id="fi-pay" accept=".csv" onchange="importCSV('payroll',this)">
+      <strong>Click or drag payroll CSV (Staff No | Name | Amount)</strong>
+      <p>Matched by Staff No — auto-fills inputs below</p>
+    </div>
+    <div id="msg-pay" style="margin-top:7px"></div>
+  </div>
+  <div class="toolbar">
+    <div class="sb"><input type="text" id="rec-search" placeholder="Search member..." oninput="rPg=1;renderReconTable()"></div>
+    <div style="display:flex;align-items:center;gap:5px;font-size:12px;color:var(--txt2)">Per page: <select class="pp" id="rec-pp" onchange="rPg=1;renderReconTable()"><option>25</option><option>50</option><option>100</option><option>200</option></select></div>
+  </div>
+  <div class="tw" style="margin-bottom:10px">
+    <table><thead><tr><th>#</th><th>Staff No</th><th>Name</th><th class="n">System Deduction</th><th>Actual Payroll &#8358;</th></tr></thead>
+    <tbody id="rec-tbody"></tbody></table>
+  </div>
+  <div id="rec-pgr" style="margin-top:-2px;margin-bottom:10px;display:flex;justify-content:flex-end"></div>
+  <div id="rec-results"></div>
+</div>
+
+<!-- HISTORY -->
+<div class="pnl" id="pnl-history">
+  <div class="card">
+    <div class="ct">Closed Month Records</div>
+    <div class="fi" style="max-width:240px;margin-bottom:14px"><label>Select Month</label><select id="hist-sel" onchange="renderHistory()"></select></div>
+    <div id="hist-content"></div>
+  </div>
+</div>
+
+</div></div>
+
+<!-- GRANT MODAL -->
+<div class="ov" id="ov-grant" onclick="if(event.target===this)closeModals()">
+<div class="modal">
+  <span class="mc2" onclick="closeModals()">&#10005;</span>
+  <h2>Grant Loan / Commodity</h2>
+  <div class="warn" style="font-size:12px">Loan repayment starts <strong>next month</strong>. Interest is charged immediately and carried to next month's interest pool.</div>
+  <div class="fi" style="margin-bottom:10px"><label>Member</label><select id="g-mem"></select></div>
+  <div class="trow"><div class="tbtn on" id="tgl-gl" onclick="setGT('loan')">Loan</div><div class="tbtn" id="tgl-gc" onclick="setGT('comm')">Commodity / GAD</div></div>
+  <div class="fg f2" style="margin-bottom:9px">
+    <div class="fi"><label>Amount &#8358;</label><input id="g-amt" type="number" placeholder="0" oninput="recG()"></div>
+    <div class="fi g-int"><label>Interest Rate % (this grant)</label><input id="g-irate" type="number" step="0.1" placeholder="5"></div>
+  </div>
+  <div class="fi" style="margin-bottom:8px"><label>Repayment Mode</label>
+    <div class="trow" style="margin-bottom:0"><div class="tbtn on" id="tgl-rm" onclick="setRM('months')">By number of months</div><div class="tbtn" id="tgl-ra" onclick="setRM('amount')">By monthly amount</div></div>
+  </div>
+  <div class="fg f2" id="row-mths" style="margin-bottom:8px">
+    <div class="fi"><label>Number of Months</label><input id="g-mths" type="number" placeholder="12" oninput="recG()"></div>
+    <div class="fi"><label>Monthly Repayment (auto)</label><input id="g-mc" readonly placeholder="Auto"></div>
+  </div>
+  <div class="fg f2" id="row-ra" style="display:none;margin-bottom:8px">
+    <div class="fi"><label>Monthly Repayment Amount &#8358;</label><input id="g-ra" type="number" placeholder="0" oninput="recG()"></div>
+    <div class="fi"><label>Months (auto)</label><input id="g-mc2" readonly placeholder="Auto"></div>
+  </div>
+  <div class="brow"><button class="btn p" onclick="doGrant()">Grant</button><button class="btn" onclick="closeModals()">Cancel</button></div>
+</div>
+</div>
+
+<!-- REFUND MODAL -->
+<div class="ov" id="ov-refund" onclick="if(event.target===this)closeModals()">
+<div class="modal">
+  <span class="mc2" onclick="closeModals()">&#10005;</span>
+  <h2>Post Refund to Member Account</h2>
+  <div class="info" style="font-size:12px">A refund <strong>adds back to the outstanding balance</strong> (e.g. reversing an overpayment, correcting a deduction). The refunded amount increases what the member owes and carries forward into next month's B/F. It does <strong>not</strong> change the payroll deduction for this month.</div>
+  <div class="fi" style="margin-bottom:10px"><label>Member</label><select id="r-mem"></select></div>
+  <div class="fi" style="margin-bottom:10px"><label>Refund Type — adds to which balance?</label>
+    <div class="trow" style="margin-bottom:0">
+      <div class="tbtn on" id="tgl-rl" onclick="setRT('loan')">Loan Principal</div>
+      <div class="tbtn" id="tgl-ri" onclick="setRT('int')">Loan Interest</div>
+      <div class="tbtn" id="tgl-rc" onclick="setRT('comm')">Commodity</div>
+    </div>
+  </div>
+  <div class="fg f2">
+    <div class="fi"><label>Refund Amount &#8358;</label><input id="r-amt" type="number" placeholder="0"></div>
+    <div class="fi"><label>Note (optional)</label><input id="r-note" placeholder="Reason for refund"></div>
+  </div>
+  <div class="brow"><button class="btn r" onclick="doRefund()">Post Refund</button><button class="btn" onclick="closeModals()">Cancel</button></div>
+</div>
+</div>
+
+<script>
+// ============================================================
+// STATE
+// ============================================================
+var S={members:[],closed:{},carryovers:{},refunds:{},curMonth:13,recMonth:13,GT:'loan',RM:'months',RT:'loan',pu:{}};
+var MONTHS=(function(){var mn=["JANUARY","FEBRUARY","MARCH","APRIL","MAY","JUNE","JULY","AUGUST","SEPTEMBER","OCTOBER","NOVEMBER","DECEMBER"];var r=[];var y=2025,mi=0;for(var i=0;i<60;i++){r.push(mn[mi]+", "+y);mi++;if(mi===12){mi=0;y++;}}return r;})();
+var mPg=1,lPg=1,rPg=1;
+function $e(i){return document.getElementById(i);}
+function v(i){return($e(i)||{}).value||'';}
+function nv(i){return parseFloat(v(i))||0;}
+function fmt(x){x=Math.round((x||0)*100)/100;return'&#8358;'+x.toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function fR(x){x=Math.round((x||0)*100)/100;return x.toLocaleString('en-NG',{minimumFractionDigits:2,maximumFractionDigits:2});}
+function irate(){return(parseFloat(v('g-rate'))||5)/100;}
+function uid(){return Date.now()+Math.random();}
+function save(){try{localStorage.setItem('coop5',JSON.stringify(S));}catch(e){}}
+function load(){try{var s=localStorage.getItem('coop5');if(s)Object.assign(S,JSON.parse(s));}catch(e){}}
+var TABS=['members','ledger','recon','history'];
+function goTab(t){
+  document.querySelectorAll('.tab').forEach(function(el,i){el.classList.toggle('on',TABS[i]===t);});
+  document.querySelectorAll('.pnl').forEach(function(el){el.classList.remove('on');});
+  $e('pnl-'+t).classList.add('on');
+  if(t==='ledger'){lPg=1;renderLedger();}
+  if(t==='recon'){rPg=1;renderReconTable();}
+  if(t==='history')renderHistoryTab();
+}
+
+// ============================================================
+// CALCULATION ENGINE — exact formulas from spreadsheet
+// ============================================================
+function computeRow(m, mi){
+  var prevKey=mi>0?MONTHS[mi-1]:null;
+  var prev=null;
+  if(prevKey&&S.closed[prevKey])prev=S.closed[prevKey].find(function(r){return r.mid===m.id;})||null;
+  var co=(S.carryovers[m.id]||{})[mi]||{};
+  var rf=(S.refunds[m.id]||{})[mi]||{};
+  var loanRefund=rf.loanRefund||0;
+  var intRefund=rf.intRefund||0;
+  var commRefund=rf.commRefund||0;
+
+  // --- SAVINGS ---
+  var savBF=prev?prev.netSavCF:m.savingsBF;
+  var addSav=m.monthlySavings;
+  var netSavCF=savBF+addSav;
+
+  // --- LOAN PRINCIPAL ---
+  var lPrinBF=prev?prev.loanPrinCF:m.loanPrinBF;
+  // Grants for this month (stored on member as _gLoan)
+  var lGranted=m._gLoan||0;
+  // Months left: comes from snapshot or member record
+  var lMths=prev?prev.loanMthsLeft:m.loanMthsLeft;
+  if(lGranted>0&&m._gLoanMths)lMths=m._gLoanMths;
+
+  // RULE: Fresh new loan (lPrinBF==0) → repayment=0 this month, starts next month
+  // Top-up on existing loan (lPrinBF>0) → repay = (BF + granted) / mths
+  var lRepay=0;
+  if(lMths>0){
+    if(lGranted>0 && lPrinBF<=0.01){
+      // Fresh grant: no repayment this month
+      lRepay=0;
+    } else {
+      // Existing loan (with or without top-up): repay full pool / months
+      lRepay=(lPrinBF+lGranted)/lMths;
+    }
+  }
+  if(co.loanRepay!==undefined)lRepay=co.loanRepay;
+
+  // Loan C/F: BF + Granted - Repay + Refund (refund ADDS back to balance)
+  var lCF=lPrinBF+lGranted-lRepay+loanRefund;
+  var newLMths=lMths>0?(lGranted>0&&lPrinBF<=0.01?lMths:Math.max(0,lMths-1)):0;
+  var lStatus=lCF>0.005?'ON LOAN':(lCF<-0.005?'OVERPAID':'NOT ON LN');
+
+  // --- INTEREST ---
+  var intBF=prev?prev.intCF:m.loanIntBF;
+  // Interest charged only on new grant amount
+  var intCharged=lGranted>0?lGranted*(m._gLoanRate||irate()):0;
+  var intPool=intBF+intCharged;
+  // Interest paid: same rule — 0 if fresh grant month
+  var intPaid=0;
+  if(lMths>0){
+    if(lGranted>0&&lPrinBF<=0.01){
+      intPaid=0; // Fresh: no interest payment this month
+    } else {
+      intPaid=intPool/lMths;
+    }
+  }
+  if(co.intPaid!==undefined)intPaid=co.intPaid;
+  // Int C/F = BF + Charged - Paid + IntRefund
+  var intCF=intPool-intPaid+intRefund;
+
+  // --- COMMODITY ---
+  var cBF=prev?prev.commCF:m.commBF;
+  var cGranted=m._gComm||0;
+  var cMths=prev?prev.commMthsLeft:m.commMthsLeft;
+  if(cGranted>0&&m._gCommMths)cMths=m._gCommMths;
+  var cRepay=0;
+  if(cMths>0){
+    if(cGranted>0&&cBF<=0.01){
+      cRepay=0; // Fresh comm: no repayment this month
+    } else {
+      cRepay=(cBF+cGranted)/cMths;
+    }
+  }
+  if(co.commRepay!==undefined)cRepay=co.commRepay;
+  // Comm C/F = BF + Sales - Repay + CommRefund
+  var cCF=cBF+cGranted-cRepay+commRefund;
+  var newCMths=cMths>0?(cGranted>0&&cBF<=0.01?cMths:Math.max(0,cMths-1)):0;
+  var cStatus=cCF>0.005?'ON PAYMENT':(cCF<-0.005?'OVED(COM)':'NOT ON PAYMENT');
+
+  var form=m.form||0, other=m.otherCharges||0;
+  // Total deduction: refunds do NOT affect this
+  var total=addSav+lRepay+intPaid+cRepay+form+other;
+
+  return{mid:m.id,lNo:m.lNo,staffNo:m.staffNo,name:m.name,
+    savBF,addSav,netSavCF,
+    lPrinBF,lGranted,loanMthsLeft:newLMths,lRepay,loanRefund,loanPrinCF:lCF,lStatus,
+    intBF,intCharged,intPaid,intRefund,intCF,
+    cBF,cGranted,commMthsLeft:newCMths,cRepay,commRefund,commCF:cCF,cStatus,
+    form,other,total};
+}
+
+// ============================================================
+// PAGINATION
+// ============================================================
+function paginate(arr,pg,pp){
+  var tot=arr.length,pages=Math.max(1,Math.ceil(tot/pp));
+  pg=Math.max(1,Math.min(pg,pages));
+  var s=(pg-1)*pp;
+  return{items:arr.slice(s,Math.min(s+pp,tot)),pg,pages,tot,start:s};
+}
+function mkPager(pid,pg,pages,tot,cb){
+  var el=$e(pid);if(!el)return;
+  el.innerHTML='<div class="pgr">'+
+    '<button onclick="'+cb+'('+Math.max(1,pg-1)+')" '+(pg<=1?'disabled':'')+'>&#8592;</button>'+
+    '<span class="pi">Page '+pg+'/'+pages+' ('+tot+')</span>'+
+    '<button onclick="'+cb+'('+Math.min(pages,pg+1)+')" '+(pg>=pages?'disabled':'')+'>&#8594;</button>'+
+  '</div>';
+}
+
+// ============================================================
+// MEMBERS
+// ============================================================
+function addMember(){
+  var sno=v('m-sno').trim(),nm=v('m-name').trim().toUpperCase();
+  if(!sno||!nm){alert('Staff No and Name required');return;}
+  S.members.push({id:uid(),lNo:v('m-lno').trim(),staffNo:sno,name:nm,
+    monthlySavings:nv('m-ms'),savingsBF:nv('m-sbf'),
+    loanPrinBF:nv('m-lbf'),loanMthsLeft:nv('m-lm'),loanIntBF:nv('m-libf'),
+    commBF:nv('m-cbf'),commMthsLeft:nv('m-cm'),form:nv('m-form'),otherCharges:nv('m-other')});
+  ['m-lno','m-sno','m-name','m-ms','m-sbf','m-lbf','m-lm','m-libf','m-cbf','m-cm','m-form','m-other'].forEach(function(id){$e(id).value='';});
+  mPg=1;renderMembers();updateSels();save();
+}
+function removeMember(id){
+  if(!confirm('Remove this member?'))return;
+  S.members=S.members.filter(function(m){return m.id!==id;});
+  renderMembers();updateSels();save();
+}
+function filterM(){
+  var q=(v('m-search')||'').toLowerCase();
+  return q?S.members.filter(function(m){return m.name.toLowerCase().includes(q)||m.staffNo.toLowerCase().includes(q)||(m.lNo||'').toLowerCase().includes(q);}):S.members.slice();
+}
+function renderMembers(){
+  $e('m-cnt').textContent=S.members.length;
+  var pp=parseInt(v('m-pp'))||25, fm=filterM(), p=paginate(fm,mPg,pp);mPg=p.pg;
+  var tb=$e('m-tbody');
+  if(!fm.length){tb.innerHTML='<tr><td colspan="14"><div class="empty">'+(v('m-search')?'No matches.':'No members yet.')+'</div></td></tr>';$e('m-pgr').innerHTML='';return;}
+  tb.innerHTML=p.items.map(function(m,i){return'<tr>'+
+    '<td>'+(p.start+i+1)+'</td><td>'+m.lNo+'</td><td>'+m.staffNo+'</td>'+
+    '<td style="font-weight:700;white-space:nowrap">'+m.name+'</td>'+
+    '<td class="n">'+fR(m.monthlySavings)+'</td><td class="n">'+fR(m.savingsBF)+'</td>'+
+    '<td class="n">'+fR(m.loanPrinBF)+'</td><td class="n">'+m.loanMthsLeft+'</td>'+
+    '<td class="n">'+fR(m.loanIntBF)+'</td><td class="n">'+fR(m.commBF)+'</td>'+
+    '<td class="n">'+m.commMthsLeft+'</td><td class="n">'+fR(m.form)+'</td>'+
+    '<td class="n">'+fR(m.otherCharges)+'</td>'+
+    '<td><button class="btn r sm" onclick="removeMember('+m.id+')">&#10005;</button></td></tr>';
+  }).join('');
+  mkPager('m-pgr',p.pg,p.pages,p.tot,'function(pg){mPg=pg;renderMembers()}');
+}
+function updateSels(){
+  var o=S.members.map(function(m){return'<option value="'+m.id+'">'+m.name+' ('+m.staffNo+')</option>';}).join('');
+  $e('g-mem').innerHTML=o;$e('r-mem').innerHTML=o;
+}
+
+// ============================================================
+// FILE IMPORT
+// ============================================================
+function doDrag(e,id){e.preventDefault();$e(id).classList.add('drag');}
+function undrag(id){$e(id).classList.remove('drag');}
+function doDropX(e){e.preventDefault();undrag('uz-xlsx');var f=e.dataTransfer.files[0];if(f)importXLSX({files:[f]});}
+function doDrop(e,t){e.preventDefault();undrag('uz-'+t);var f=e.dataTransfer.files[0];if(f){if(t==='csv')importCSV('members',{files:[f]});else importCSV('payroll',{files:[f]});}}
+function importCSV(type,inp){if(inp.files[0])readText(inp.files[0],function(txt){var lines=txt.split(/\r?\n/).filter(function(l){return l.trim();});if(type==='members')parseMemCSV(lines);else parsePayCSV(lines);});}
+function readText(file,cb){var r=new FileReader();r.onload=function(e){cb(e.target.result);};r.readAsText(file);}
+
+// XLSX import using SheetJS
+function importXLSX(inp){
+  var file=inp.files?inp.files[0]:inp;
+  if(!file)return;
+  if(typeof XLSX==='undefined'){
+    // Load SheetJS dynamically
+    var s=document.createElement('script');
+    s.src='https://cdn.jsdelivr.net/npm/xlsx@0.18.5/dist/xlsx.full.min.js';
+    s.onload=function(){doXLSX(file);};
+    document.head.appendChild(s);
+  } else {doXLSX(file);}
+}
+function doXLSX(file){
+  var r=new FileReader();
+  r.onload=function(e){
+    try{
+      var wb=XLSX.read(e.target.result,{type:'array'});
+      var ws=wb.Sheets[wb.SheetNames[0]];
+      var rows=XLSX.utils.sheet_to_json(ws,{header:1,defval:0});
+      // Find header row or data start
+      // Columns based on your spreadsheet:
+      // 0=S/N, 1=MONTH, 2=L/No, 3=StaffNo, 4=Name, 5=SavBF, 6=AddSav, 7=AddSavBank
+      // 8=NetSavCF, 9=LoanPrinBF, 10=LoanGranted, 11=LnDuration, 12=LoanRepay
+      // 13=LoanRepayBank, 14=LoanRefund, 15=LoanLedger, 16=LoanStatus
+      // 17=IntBF, 18=IntCharged, 19=IntPaid, 20=IntPaidBank, 21=IntRefunds, 22=IntCF
+      // 23=CommBF, 24=CommSales, 25=CommDuration, 26=CommRepay, 27=CommRepayBank
+      // 28=CommRefunds, 29=CommCF, 30=CommStatus, 31=Form, 32=Other, 33=TotalDeduction
+      var added=0,skipped=0;
+      var startRow=0;
+      // Skip header rows — find first row where col[0] is numeric (S/N)
+      for(var i=0;i<Math.min(5,rows.length);i++){
+        var c0=rows[i][0];
+        if(typeof c0==='number'&&c0>=1){startRow=i;break;}
+        if(typeof c0==='string'&&!isNaN(parseInt(c0))){startRow=i;break;}
+      }
+      for(var ri=startRow;ri<rows.length;ri++){
+        var row=rows[ri];
+        if(!row||row.length<5)continue;
+        var staffNo=String(row[3]||'').trim();
+        var name=String(row[4]||'').trim().toUpperCase();
+        if(!staffNo||!name||name==='NAME')continue;
+        function gn(i){var x=row[i];if(x===null||x===undefined||x==='')return 0;var n=parseFloat(String(x).replace(/,/g,''));return isNaN(n)?0:n;}
+        var mths=parseInt(gn(11))||0;
+        var cmths=parseInt(gn(25))||0;
+        var lGranted=gn(10);
+        var lRefund=gn(14);
+        var cRefund=gn(28);
+        var newM={
+          id:uid(),
+          lNo:String(row[2]||'').trim(),
+          staffNo:staffNo,name:name,
+          monthlySavings:gn(6),
+          savingsBF:gn(5),
+          loanPrinBF:gn(9),
+          loanMthsLeft:mths,
+          loanIntBF:gn(17),
+          commBF:gn(23),
+          commMthsLeft:cmths,
+          form:gn(31),
+          otherCharges:gn(32),
+        };
+        // If there's a loan granted this month, store it
+        if(lGranted>0){newM._gLoan=lGranted;newM._gLoanMths=mths;newM._gLoanRate=(parseFloat(v('g-rate'))||5)/100;}
+        // If there's a refund this month, store it
+        if(lRefund>0){if(!S.refunds[newM.id])S.refunds[newM.id]={};if(!S.refunds[newM.id][S.curMonth])S.refunds[newM.id][S.curMonth]={};S.refunds[newM.id][S.curMonth].loanRefund=lRefund;}
+        if(cRefund>0){if(!S.refunds[newM.id])S.refunds[newM.id]={};if(!S.refunds[newM.id][S.curMonth])S.refunds[newM.id][S.curMonth]={};S.refunds[newM.id][S.curMonth].commRefund=cRefund;}
+        S.members.push(newM);
+        added++;
+      }
+      $e('msg-members').innerHTML='<div class="ok">&#10003; Imported '+added+' member(s) from Excel'+(skipped?' ('+skipped+' skipped)':'')+'. Total: '+S.members.length+'</div>';
+      mPg=1;renderMembers();updateSels();save();
+    }catch(err){$e('msg-members').innerHTML='<div style="color:var(--red);padding:8px">Error reading Excel file: '+err.message+'</div>';}
+  };
+  r.readAsArrayBuffer(file);
+}
+
+function parseMemCSV(lines){
+  var added=0,skipped=0;
+  var start=isNaN(parseFloat((lines[0].split(',')[3]||'x').trim()))?1:0;
+  for(var i=start;i<lines.length;i++){
+    var c=lines[i].split(',').map(function(x){return x.trim().replace(/^"|"$/g,'');});
+    if(c.length<3)continue;
+    var sno=c[1]||'',nm=(c[2]||'').toUpperCase();
+    if(!sno||!nm){skipped++;continue;}
+    S.members.push({id:uid(),lNo:c[0]||'',staffNo:sno,name:nm,
+      monthlySavings:parseFloat(c[3])||0,savingsBF:parseFloat(c[4])||0,
+      loanPrinBF:parseFloat(c[5])||0,loanMthsLeft:parseInt(c[6])||0,
+      loanIntBF:parseFloat(c[7])||0,commBF:parseFloat(c[8])||0,
+      commMthsLeft:parseInt(c[9])||0,form:parseFloat(c[10])||0,otherCharges:parseFloat(c[11])||0});
+    added++;
+  }
+  $e('msg-members').innerHTML='<div class="ok">&#10003; Imported '+added+' member(s)'+(skipped?' ('+skipped+' skipped)':'')+'. Total: '+S.members.length+'</div>';
+  mPg=1;renderMembers();updateSels();save();
+}
+function parsePayCSV(lines){
+  S.pu={};var count=0;
+  var start=isNaN(parseFloat((lines[0].split(',')[2]||'x').trim()))?1:0;
+  for(var i=start;i<lines.length;i++){
+    var c=lines[i].split(',').map(function(x){return x.trim().replace(/^"|"$/g,'');});
+    if(c.length<3||!c[0])continue;
+    S.pu[c[0]]=parseFloat(c[2])||0;count++;
+  }
+  $e('msg-pay').innerHTML='<div class="ok">&#10003; Loaded '+count+' payroll entries. Inputs auto-filled.</div>';
+  prefillPay();
+}
+function prefillPay(){S.members.forEach(function(m){var inp=$e('pr-'+m.id);if(inp&&S.pu[m.staffNo]!==undefined)inp.value=S.pu[m.staffNo];});}
+function dlTpl(type){
+  var csv='',fn='';
+  if(type==='members'){
+    csv='lno,staffno,name,monthly_savings,savings_bf,loan_prin_bf,loan_months_left,loan_int_bf,comm_bf,comm_months_left,form,other_charges\nM0001,SS0001,SURNAME FIRSTNAME,5000,100000,0,0,0,0,0,0,0\n';
+    fn='members_template.csv';
+  } else {
+    csv='staffno,name,amount\n';
+    getRows(S.recMonth).forEach(function(r){csv+=r.staffNo+','+r.name+','+r.total.toFixed(2)+'\n';});
+    fn='payroll_template_'+MONTHS[S.recMonth].replace(', ','_')+'.csv';
+  }
+  dlCSV(csv,fn);
+}
+function exportDeductions(){
+  var rows=getRows(S.curMonth);
+  var csv='staffno,name,total_deduction\n';
+  rows.forEach(function(r){csv+=r.staffNo+','+r.name+','+r.total.toFixed(2)+'\n';});
+  dlCSV(csv,'deductions_'+MONTHS[S.curMonth].replace(', ','_')+'.csv');
+}
+function dlCSV(csv,fn){var a=document.createElement('a');a.href='data:text/csv;charset=utf-8,'+encodeURIComponent(csv);a.download=fn;a.click();}
+function getRows(mi){var mk=MONTHS[mi];return S.closed[mk]?S.closed[mk]:S.members.map(function(m){return computeRow(m,mi);});}
+
+// ============================================================
+// LEDGER
+// ============================================================
+function ldgPrev(){if(S.curMonth>0){S.curMonth--;lPg=1;renderLedger();}}
+function ldgNext(){if(S.curMonth<MONTHS.length-1){S.curMonth++;lPg=1;renderLedger();}}
+function filterL(rows){var q=(v('ldg-search')||'').toLowerCase();return q?rows.filter(function(r){return r.name.toLowerCase().includes(q)||r.staffNo.toLowerCase().includes(q);}):rows;}
+function renderLedger(){
+  var mk=MONTHS[S.curMonth];$e('ldg-lbl').textContent=mk;$e('top-month').textContent='Active: '+mk;
+  var isC=!!S.closed[mk];$e('ldg-closed').style.display=isC?'block':'none';
+  if(!S.members.length){$e('ldg-tbody').innerHTML='<tr><td colspan="27"><div class="empty">No members. Add in Members tab.</div></td></tr>';$e('ldg-mr').innerHTML='';$e('ldg-pgr').innerHTML='';return;}
+  var all=isC?S.closed[mk]:S.members.map(function(m){return computeRow(m,S.curMonth);});
+  renderMR(all);
+  var fl=filterL(all);var pp=parseInt(v('ldg-pp'))||25;var p=paginate(fl,lPg,pp);lPg=p.pg;
+  $e('ldg-tbody').innerHTML=p.items.map(function(r){
+    var lc=r.lStatus==='ON LOAN'?'loan':(r.lStatus==='NOT ON LN'?'noloan':'oved');
+    var cc=r.cStatus==='ON PAYMENT'?'comm':(r.cStatus==='NOT ON PAYMENT'?'noloan':'oved');
+    var rfbdg=function(x){return x>0?'<span class="rf-badge">+'+fR(x)+'</span>':'-';};
+    return'<tr>'+
+      '<td style="font-weight:700;white-space:nowrap;min-width:160px">'+r.name+'</td><td>'+r.staffNo+'</td>'+
+      '<td class="n">'+fR(r.savBF)+'</td><td class="n g">'+fR(r.addSav)+'</td><td class="n b">'+fR(r.netSavCF)+'</td>'+
+      '<td class="n">'+fR(r.lPrinBF)+'</td><td class="n '+(r.lGranted?'g':'')+'">'+fR(r.lGranted)+'</td>'+
+      '<td class="n">'+r.loanMthsLeft+'</td><td class="n r2">'+fR(r.lRepay)+'</td>'+
+      '<td class="n">'+rfbdg(r.loanRefund)+'</td>'+
+      '<td class="n">'+fR(r.loanPrinCF)+'</td>'+
+      '<td><span class="bdg '+lc+'">'+r.lStatus+'</span></td>'+
+      '<td class="n">'+fR(r.intBF)+'</td><td class="n '+(r.intCharged?'r2':'')+'">'+fR(r.intCharged)+'</td>'+
+      '<td class="n r2">'+fR(r.intPaid)+'</td><td class="n">'+rfbdg(r.intRefund)+'</td>'+
+      '<td class="n">'+fR(r.intCF)+'</td>'+
+      '<td class="n">'+fR(r.cBF)+'</td><td class="n '+(r.cGranted?'g':'')+'">'+fR(r.cGranted)+'</td>'+
+      '<td class="n">'+r.commMthsLeft+'</td><td class="n r2">'+fR(r.cRepay)+'</td>'+
+      '<td class="n">'+rfbdg(r.commRefund)+'</td>'+
+      '<td class="n">'+fR(r.commCF)+'</td>'+
+      '<td><span class="bdg '+cc+'">'+r.cStatus+'</span></td>'+
+      '<td class="n">'+fR(r.form)+'</td><td class="n">'+fR(r.other)+'</td>'+
+      '<td class="n b" style="background:#fffbe8">'+fR(r.total)+'</td>'+
+    '</tr>';
+  }).join('');
+  mkPager('ldg-pgr',p.pg,p.pages,p.tot,'function(pg){lPg=pg;renderLedger()}');
+}
+function renderMR(rows){
+  var ts=rows.reduce(function(a,r){return a+r.netSavCF;},0);
+  var td=rows.reduce(function(a,r){return a+r.total;},0);
+  var tl=rows.reduce(function(a,r){return a+r.loanPrinCF;},0);
+  var ol=rows.filter(function(r){return r.lStatus==='ON LOAN';}).length;
+  var oc=rows.filter(function(r){return r.cStatus==='ON PAYMENT';}).length;
+  var trf=rows.reduce(function(a,r){return a+(r.loanRefund||0)+(r.intRefund||0)+(r.commRefund||0);},0);
+  $e('ldg-mr').innerHTML='<div class="mc"><div class="ml">Savings C/F</div><div class="mv g">'+fmt(ts)+'</div></div>'+
+    '<div class="mc"><div class="ml">Total Deductions</div><div class="mv a">'+fmt(td)+'</div></div>'+
+    '<div class="mc"><div class="ml">Loan Book</div><div class="mv b">'+fmt(tl)+'</div></div>'+
+    '<div class="mc"><div class="ml">On Loan</div><div class="mv">'+ol+'/'+rows.length+'</div></div>'+
+    '<div class="mc"><div class="ml">On Comm/GAD</div><div class="mv">'+oc+'/'+rows.length+'</div></div>'+
+    (trf?'<div class="mc"><div class="ml">Refunds Posted</div><div class="mv r">'+fmt(trf)+'</div></div>':'');
+}
+function closeMonth(){
+  if(!S.members.length){alert('No members.');return;}
+  var mk=MONTHS[S.curMonth];
+  if(S.closed[mk]){alert(mk+' already closed.');return;}
+  if(!confirm('Lock and close '+mk+'?\n\nSaves a permanent snapshot and advances to '+MONTHS[Math.min(S.curMonth+1,MONTHS.length-1)]+'.'))return;
+  S.closed[mk]=S.members.map(function(m){return computeRow(m,S.curMonth);});
+  // Clear one-time grants after close (permanent grants stored in member record carry forward via snapshot)
+  S.members.forEach(function(m){delete m._gLoan;delete m._gLoanMths;delete m._gLoanRate;delete m._gComm;delete m._gCommMths;});
+  if(S.curMonth<MONTHS.length-1)S.curMonth++;
+  lPg=1;save();renderLedger();
+  alert('Month closed. Now showing '+MONTHS[S.curMonth]+'.');
+}
+
+// ============================================================
+// MODALS
+// ============================================================
+function showModal(t){updateSels();if(t==='grant'){$e('g-irate').value=(irate()*100).toFixed(1);$e('ov-grant').classList.add('on');}else{$e('ov-refund').classList.add('on');}}
+function closeModals(){document.querySelectorAll('.ov').forEach(function(el){el.classList.remove('on');});}
+function setGT(t){S.GT=t;$e('tgl-gl').classList.toggle('on',t==='loan');$e('tgl-gc').classList.toggle('on',t==='comm');document.querySelectorAll('.g-int').forEach(function(el){el.style.display=t==='loan'?'flex':'none';});}
+function setRM(m){S.RM=m;$e('tgl-rm').classList.toggle('on',m==='months');$e('tgl-ra').classList.toggle('on',m==='amount');$e('row-mths').style.display=m==='months'?'grid':'none';$e('row-ra').style.display=m==='amount'?'grid':'none';recG();}
+function recG(){var amt=nv('g-amt');if(S.RM==='months'){var mths=parseInt(v('g-mths'))||0;$e('g-mc').value=mths>0&&amt>0?(amt/mths).toFixed(2):'';}else{var rep=nv('g-ra');$e('g-mc2').value=rep>0&&amt>0?Math.ceil(amt/rep):'';}  }
+function doGrant(){
+  var mid=parseFloat(v('g-mem'));var amount=nv('g-amt');
+  if(!amount){alert('Enter amount');return;}
+  var mths=S.RM==='months'?parseInt(v('g-mths'))||0:Math.ceil(amount/(nv('g-ra')||1));
+  var m=S.members.find(function(x){return x.id==mid;});if(!m)return;
+  if(S.GT==='loan'){m._gLoan=(m._gLoan||0)+amount;m._gLoanMths=mths;m._gLoanRate=(nv('g-irate')||5)/100;}
+  else{m._gComm=(m._gComm||0)+amount;m._gCommMths=mths;}
+  closeModals();lPg=1;renderLedger();save();
+}
+function setRT(t){S.RT=t;['rl','ri','rc'].forEach(function(id){$e('tgl-'+id).classList.remove('on');});$e('tgl-r'+({loan:'l',int:'i',comm:'c'}[t])).classList.add('on');}
+function doRefund(){
+  var mid=parseFloat(v('r-mem'));var amount=nv('r-amt');
+  if(!amount){alert('Enter refund amount');return;}
+  var m=S.members.find(function(x){return x.id==mid;});if(!m)return;
+  var mi=S.curMonth;
+  if(!S.refunds[mid])S.refunds[mid]={};
+  if(!S.refunds[mid][mi])S.refunds[mid][mi]={};
+  var rf=S.refunds[mid][mi];
+  if(S.RT==='loan')rf.loanRefund=(rf.loanRefund||0)+amount;
+  else if(S.RT==='int')rf.intRefund=(rf.intRefund||0)+amount;
+  else rf.commRefund=(rf.commRefund||0)+amount;
+  closeModals();$e('r-amt').value='';$e('r-note').value='';lPg=1;renderLedger();save();
+}
+
+// ============================================================
+// RECONCILIATION
+// ============================================================
+function recPrev(){if(S.recMonth>0){S.recMonth--;rPg=1;renderReconTable();}}
+function recNext(){if(S.recMonth<MONTHS.length-1){S.recMonth++;rPg=1;renderReconTable();}}
+function filterR(rows){var q=(v('rec-search')||'').toLowerCase();return q?rows.filter(function(r){return r.name.toLowerCase().includes(q)||r.staffNo.toLowerCase().includes(q);}):rows;}
+function renderReconTable(){
+  var mk=MONTHS[S.recMonth];$e('rec-lbl').textContent=mk;
+  var all=getRows(S.recMonth);
+  if(!all.length){$e('rec-tbody').innerHTML='<tr><td colspan="5"><div class="empty">No members.</div></td></tr>';$e('rec-pgr').innerHTML='';return;}
+  var fl=filterR(all);var pp=parseInt(v('rec-pp'))||25;var p=paginate(fl,rPg,pp);rPg=p.pg;
+  $e('rec-tbody').innerHTML=p.items.map(function(r,i){
+    var pre=S.pu[r.staffNo]!==undefined?S.pu[r.staffNo]:'';
+    return'<tr><td>'+(p.start+i+1)+'</td><td>'+r.staffNo+'</td><td style="font-weight:600">'+r.name+'</td>'+
+    '<td class="n b">'+fR(r.total)+'</td>'+
+    '<td><input type="number" id="pr-'+r.mid+'" value="'+pre+'" placeholder="Enter or upload CSV" style="width:165px;font-size:12.5px"></td></tr>';
+  }).join('');
+  $e('rec-results').innerHTML='';
+  mkPager('rec-pgr',p.pg,p.pages,p.tot,'function(pg){rPg=pg;renderReconTable()}');
+  prefillPay();
+}
+function runRecon(){
+  var all=getRows(S.recMonth);var results=[];
+  all.forEach(function(r){var inp=$e('pr-'+r.mid);if(!inp||inp.value==='')return;var actual=parseFloat(inp.value)||0;results.push({r:r,actual:actual,diff:actual-r.total});});
+  if(!results.length){alert('Enter at least one payroll amount or upload CSV.');return;}
+  var allGood=results.every(function(x){return Math.abs(x.diff)<0.01;});
+  var html='<div class="ct" style="margin-bottom:10px">Results — '+MONTHS[S.recMonth]+'</div>';
+  if(allGood)html+='<div class="ok">&#10003; All deductions match payroll exactly.</div>';
+  html+=results.map(function(x){
+    var abs=Math.abs(x.diff);var sf=x.diff<-0.01;var ov=x.diff>0.01;
+    var cls=sf?'bad':(ov?'over':'ok2');var dc=sf?'dn':(ov?'dp':'dz');
+    return'<div class="rcard '+cls+'" id="rc-'+x.r.mid+'">'+
+      '<div style="display:flex;justify-content:space-between;align-items:start;flex-wrap:wrap;gap:8px">'+
+        '<div><div class="rname">'+x.r.name+' <span style="font-weight:400;font-size:11px;color:var(--txt2)">('+x.r.staffNo+')</span></div>'+
+        '<div class="rnums"><span>System: <strong>'+fmt(x.r.total)+'</strong></span><span>Payroll: <strong>'+fmt(x.actual)+'</strong></span>'+
+        (x.r.addSav?'<span>Sav:'+fmt(x.r.addSav)+'</span>':'')+
+        (x.r.lRepay?'<span>Ln:'+fmt(x.r.lRepay)+'</span>':'')+
+        (x.r.intPaid?'<span>Int:'+fmt(x.r.intPaid)+'</span>':'')+
+        (x.r.cRepay?'<span>Comm:'+fmt(x.r.cRepay)+'</span>':'')+
+        '</div></div>'+
+        '<span class="bdg '+dc+'">'+(x.diff>=0?'+':'')+fR(x.diff)+'</span></div>'+
+      (sf?'<div class="ract"><label>Shortfall <strong>'+fmt(abs)+'</strong> — reduce:</label>'+
+        '<select id="rf-'+x.r.mid+'"><option value="loanRepay">Loan Repayment</option><option value="intPaid">Loan Interest</option><option value="commRepay">Comm Repayment</option></select>'+
+        '<label>over</label><input type="number" id="rm-'+x.r.mid+'" value="1" min="1" max="24" style="width:58px"><label>mth(s)</label>'+
+        '<button class="btn g sm" onclick="applyCarry('+x.r.mid+','+x.diff+')">Apply</button></div>'
+        :(ov?'<div style="margin-top:4px;font-size:12px;color:var(--acc)">Overpaid by '+fmt(abs)+'</div>':'')
+      )+'</div>';
+  }).join('');
+  $e('rec-results').innerHTML=html;
+}
+function applyCarry(mid,diff){
+  var field=$e('rf-'+mid).value;var spread=parseInt($e('rm-'+mid).value)||1;
+  var sf=Math.abs(diff);var pm=sf/spread;
+  var row=getRows(S.recMonth).find(function(r){return r.mid==mid;});if(!row)return;
+  for(var i=1;i<=spread;i++){
+    var fi=S.recMonth+i;if(fi>=MONTHS.length)break;
+    if(!S.carryovers[mid])S.carryovers[mid]={};
+    if(!S.carryovers[mid][fi])S.carryovers[mid][fi]={};
+    var co=S.carryovers[mid][fi];
+    if(field==='loanRepay')co.loanRepay=Math.max(0,(row.lRepay||0)-pm);
+    else if(field==='intPaid')co.intPaid=Math.max(0,(row.intPaid||0)-pm);
+    else if(field==='commRepay')co.commRepay=Math.max(0,(row.cRepay||0)-pm);
+  }
+  var card=$e('rc-'+mid);
+  if(card){card.classList.remove('bad');card.classList.add('ok2');var ra=card.querySelector('.ract');if(ra)ra.innerHTML='<span style="font-size:12px;font-weight:700;color:var(--grn)">&#10003; '+fmt(pm)+'/mth off '+field+' for '+spread+' mth(s) from '+MONTHS[S.recMonth+1]+'</span>';}
+  save();
+}
+
+// ============================================================
+// HISTORY
+// ============================================================
+function renderHistoryTab(){
+  var sel=$e('hist-sel');var keys=Object.keys(S.closed);
+  if(!keys.length){sel.innerHTML='<option>No closed months</option>';$e('hist-content').innerHTML='<div class="empty">Close a month from the Ledger tab first.</div>';return;}
+  sel.innerHTML=keys.map(function(k){return'<option value="'+k+'">'+k+'</option>';}).join('');
+  renderHistory();
+}
+function renderHistory(){
+  var mk=$e('hist-sel').value;var snap=S.closed[mk];if(!snap){$e('hist-content').innerHTML='';return;}
+  var ts=snap.reduce(function(a,r){return a+r.netSavCF;},0);
+  var td=snap.reduce(function(a,r){return a+r.total;},0);
+  var tl=snap.reduce(function(a,r){return a+r.loanPrinCF;},0);
+  $e('hist-content').innerHTML=
+    '<div class="mr"><div class="mc"><div class="ml">Savings C/F</div><div class="mv g">'+fmt(ts)+'</div></div>'+
+    '<div class="mc"><div class="ml">Deductions</div><div class="mv a">'+fmt(td)+'</div></div>'+
+    '<div class="mc"><div class="ml">Loan Book</div><div class="mv b">'+fmt(tl)+'</div></div></div>'+
+    '<div class="tw"><table><thead><tr><th>Name</th><th>Staff No</th><th class="n">Sav C/F</th><th class="n">Loan C/F</th><th class="n">Int C/F</th><th class="n">Comm C/F</th><th class="n">Loan Refund</th><th class="n">Comm Refund</th><th class="n b">Total Deduction</th></tr></thead><tbody>'+
+    snap.map(function(r){return'<tr><td style="font-weight:600;white-space:nowrap">'+r.name+'</td><td>'+r.staffNo+'</td>'+
+      '<td class="n">'+fR(r.netSavCF)+'</td><td class="n">'+fR(r.loanPrinCF)+'</td>'+
+      '<td class="n">'+fR(r.intCF)+'</td><td class="n">'+fR(r.commCF)+'</td>'+
+      '<td class="n">'+(r.loanRefund?fR(r.loanRefund):'-')+'</td>'+
+      '<td class="n">'+(r.commRefund?fR(r.commRefund):'-')+'</td>'+
+      '<td class="n b">'+fR(r.total)+'</td></tr>';}).join('')+
+    '</tbody></table></div>'+
+    '<div class="brow" style="margin-top:10px"><button class="btn g sm" onclick="exportHistCSV()">&#8659; Export CSV</button></div>';
+}
+function exportHistCSV(){var mk=$e('hist-sel').value;var snap=S.closed[mk];if(!snap)return;var csv='staffno,name,total_deduction\n';snap.forEach(function(r){csv+=r.staffNo+','+r.name+','+r.total.toFixed(2)+'\n';});dlCSV(csv,'deductions_'+mk.replace(', ','_')+'.csv');}
+
+// ============================================================
+// BOOT with all 16 members from file
+// ============================================================
+(function(){
+  load();
+  if(!S.members.length){
+    var d=[{"id": 1, "lNo": "M0001", "staffNo": "SS0282", "name": "AKOMOLAFE AKINLEYE", "monthlySavings": 5000.0, "savingsBF": 838506.0, "loanPrinBF": 635056.1140000001, "loanMthsLeft": 11, "loanIntBF": 33424.006, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 2, "lNo": "M0002", "staffNo": "JS0582", "name": "ABIFADE FEMI JOSUHA", "monthlySavings": 3000.0, "savingsBF": 156000.0, "loanPrinBF": 0.0, "loanMthsLeft": 0, "loanIntBF": 0.0, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 3, "lNo": "M0003", "staffNo": "SS1113", "name": "ODIGUN OLUWAFUNMILAYO GRACE (NEE ADEYEYE)", "monthlySavings": 5000.0, "savingsBF": 588768.64, "loanPrinBF": 578680.5978571428, "loanMthsLeft": 13, "loanIntBF": 30456.873571428572, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 4, "lNo": "M0004", "staffNo": "SS0797", "name": "OYELUSI BUKOLA CAROLINE", "monthlySavings": 2000.0, "savingsBF": 279621.51, "loanPrinBF": 0.0, "loanMthsLeft": 0, "loanIntBF": 0.0, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 5, "lNo": "M0005", "staffNo": "SS0810", "name": "JONATHAN OLUFEMI ADEOYE", "monthlySavings": 5000.0, "savingsBF": 660985.0, "loanPrinBF": 748450.1455384615, "loanMthsLeft": 12, "loanIntBF": 39392.11292307692, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 6, "lNo": "M0006", "staffNo": "JS0403", "name": "FAYOSE SOLOMON JAYE", "monthlySavings": 5000.0, "savingsBF": 579800.0, "loanPrinBF": 0.0, "loanMthsLeft": 0, "loanIntBF": 0.0, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 7, "lNo": "M0007", "staffNo": "SS1112", "name": "AKUTE ADEKUNLE SYLVANUS", "monthlySavings": 3000.0, "savingsBF": 335300.0, "loanPrinBF": 333945.652173913, "loanMthsLeft": 22, "loanIntBF": 17576.08695652174, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 8, "lNo": "M0008", "staffNo": "SS1836", "name": "BAMIGBOYE JOHN KAYODE", "monthlySavings": 5000.0, "savingsBF": 377391.66, "loanPrinBF": 218000.08862499997, "loanMthsLeft": 11, "loanIntBF": 11473.688875, "loanGrantedThisMonth": 50000.0, "loanGrantedRate": 0.05, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 1000.0, "otherCharges": 0.0}, {"id": 9, "lNo": "M0010", "staffNo": "SS0523", "name": "OJO OLUWAKEMI FUNKE (NEE AJAJA)", "monthlySavings": 5000.0, "savingsBF": 2264847.62, "loanPrinBF": 0.0, "loanMthsLeft": 0, "loanIntBF": 0.0, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 4455214.65, "commMthsLeft": 63, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 10, "lNo": "M0011", "staffNo": "SS0591", "name": "WEYA-AJAYI FUNBI OMOLARA", "monthlySavings": 2000.0, "savingsBF": 217757.64, "loanPrinBF": 207292.93265, "loanMthsLeft": 19, "loanIntBF": 10910.154349999999, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 11, "lNo": "M0012", "staffNo": "SS2209", "name": "ADEGBUYIRO SUNDAY ADEBAYO", "monthlySavings": 2000.0, "savingsBF": 209493.59, "loanPrinBF": 0.0, "loanMthsLeft": 0, "loanIntBF": 0.0, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 12, "lNo": "M0013", "staffNo": "SS0426", "name": "OLONI BOSEDE CATHERINE", "monthlySavings": 5000.0, "savingsBF": 434600.0, "loanPrinBF": 457323.00299999997, "loanMthsLeft": 18, "loanIntBF": 24069.631736842108, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": -26500.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 13, "lNo": "M0014", "staffNo": "SS1607", "name": "ASO OPEYEMI CLETUS", "monthlySavings": 2000.0, "savingsBF": 193358.07, "loanPrinBF": 93683.64104999999, "loanMthsLeft": 9, "loanIntBF": 4930.71795, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 14, "lNo": "M0015", "staffNo": "SS0094", "name": "OBABIRE KEMISOLA ABIDEMI", "monthlySavings": 2000.0, "savingsBF": 648100.0, "loanPrinBF": 197297.99595, "loanMthsLeft": 9, "loanIntBF": 10384.105050000002, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 15, "lNo": "M0016", "staffNo": "SS0482", "name": "OLUBUMMO BANKOLE ADENIYI", "monthlySavings": 5000.0, "savingsBF": 516800.0, "loanPrinBF": 773396.5378125, "loanMthsLeft": 15, "loanIntBF": 40705.0809375, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 0.0, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}, {"id": 16, "lNo": "M0017", "staffNo": "SS0518", "name": "OGBIYE CHRISTIANA BOSEDE (NEE OLUWADARE)", "monthlySavings": 0.0, "savingsBF": 553900.0, "loanPrinBF": 91255.917, "loanMthsLeft": 0, "loanIntBF": 4802.943, "loanGrantedThisMonth": 0.0, "loanGrantedRate": 0, "loanRefundThisMonth": 0, "commBF": 947960.73, "commMthsLeft": 0, "commGrantedThisMonth": 0.0, "commRefundThisMonth": 0, "form": 0.0, "otherCharges": 0.0}];
+    d.forEach(function(m){
+      // Store current-month grants & refunds from file data
+      if(m.loanGrantedThisMonth>0){
+        m._gLoan=m.loanGrantedThisMonth;
+        m._gLoanMths=m.loanMthsLeft;
+        m._gLoanRate=m.loanGrantedRate||0.05;
+      }
+      if(m.loanRefundThisMonth>0){
+        if(!S.refunds[m.id])S.refunds[m.id]={};
+        if(!S.refunds[m.id][13])S.refunds[m.id][13]={};
+        S.refunds[m.id][13].loanRefund=m.loanRefundThisMonth;
+      }
+      if(m.commRefundThisMonth>0){
+        if(!S.refunds[m.id])S.refunds[m.id]={};
+        if(!S.refunds[m.id][13])S.refunds[m.id][13]={};
+        S.refunds[m.id][13].commRefund=m.commRefundThisMonth;
+      }
+      delete m.loanGrantedThisMonth;delete m.loanGrantedRate;
+      delete m.loanRefundThisMonth;delete m.commRefundThisMonth;
+      S.members.push(m);
+    });
+  }
+  renderMembers();updateSels();renderLedger();
+})();
+</script>
+</body>
+</html>
