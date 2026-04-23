@@ -296,10 +296,19 @@ async function syncLoanRepayment(client, memberId, month, year, principalPaid, i
       [newBalance, penaltyAmount, newMonthsRemaining, loan.id]
     );
     
-    // Add penalty as a loan repayment entry for tracking
+    // Record a zero-payment marker so repeated uploads for same period do not apply penalty again.
+    const existingPenalty = await client.query(
+      `SELECT id FROM loan_repayments
+       WHERE loan_id = $1 AND month = $2 AND year = $3
+         AND description ILIKE 'Penalty for unpaid month%'
+       LIMIT 1`,
+      [loan.id, month, year]
+    );
+    if (existingPenalty.rows.length > 0) return;
+
     await client.query(
       'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [loan.id, memberId, 0, penaltyAmount, month, year, `Penalty for unpaid month (${(penaltyRate * 100)}% of remaining interest)`]
+      [loan.id, memberId, 0, 0, month, year, `Penalty for unpaid month (${(penaltyRate * 100)}% of remaining interest: ${penaltyAmount.toFixed(2)})`]
     );
     
     return;
@@ -307,17 +316,35 @@ async function syncLoanRepayment(client, memberId, month, year, principalPaid, i
   
   // Original logic for when repayment is made
   const loanRes = await client.query(
-    "SELECT id, remaining_balance, interest_paid AS int_paid, months_paid, months_remaining FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
+    `SELECT id, remaining_balance, total_interest, interest_paid AS int_paid, months_paid, months_remaining, status
+     FROM loans
+     WHERE member_id=$1
+       AND (status='active' OR (status='cleared' AND interest_paid < total_interest))
+     ORDER BY created_at ASC
+     LIMIT 1`,
     [memberId]
   );
   if (!loanRes.rows.length) return;
   const loan = loanRes.rows[0];
-  const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalPaid);
+  const remainingBalance = parseFloat(loan.remaining_balance) || 0;
+  const totalInterest = parseFloat(loan.total_interest) || 0;
+  const interestPaidSoFar = parseFloat(loan.int_paid) || 0;
+  const principalApplied = loan.status === 'cleared' ? 0 : Math.min(Math.max(0, principalPaid || 0), remainingBalance);
+  const interestApplied = Math.min(Math.max(0, interestPaid || 0), Math.max(0, totalInterest - interestPaidSoFar));
+  const hasPayment = principalApplied > 0 || interestApplied > 0;
+  if (!hasPayment) return;
+
+  const newBalance = Math.max(0, remainingBalance - principalApplied);
   const newMonthsRemaining = Math.max(0, parseInt(loan.months_remaining || 0) - 1);
   const newStatus  = newBalance <= 0 ? 'cleared' : 'active';
   await client.query(
-    'UPDATE loans SET remaining_balance=$1, interest_paid=interest_paid+$2, months_paid=months_paid+1, months_remaining=$3, status=$4, updated_at=NOW() WHERE id=$5',
-    [newBalance, interestPaid, newMonthsRemaining, newStatus, loan.id]
+    'UPDATE loans SET remaining_balance=$1, interest_paid=$2, months_paid=months_paid+1, months_remaining=$3, status=$4, updated_at=NOW() WHERE id=$5',
+    [newBalance, Math.min(totalInterest, interestPaidSoFar + interestApplied), newMonthsRemaining, newStatus, loan.id]
+  );
+
+  await client.query(
+    'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
+    [loan.id, memberId, principalApplied, interestApplied, month, year, description || 'Synced from monthly deductions']
   );
 }
 
@@ -713,8 +740,8 @@ async function getDeductions(req, res) {
         COALESCE(mt_savings_bank.amount, 0) AS savings_bank,
         COALESCE(mt_loan_repayment.amount, 0) AS loan_repayment,
         COALESCE(mt_loan_repayment_bank.amount, 0) AS loan_repayment_bank,
-        COALESCE(mt_loan_interest.amount, 0) AS loan_interest,
-        COALESCE(mt_commodity.amount, 0) AS commodity_repayment,
+        (COALESCE(mt_loan_interest.amount, 0) + COALESCE(mt_loan_interest_bank.amount, 0)) AS loan_interest,
+        (COALESCE(mt_commodity.amount, 0) + COALESCE(mt_commodity_bank.amount, 0)) AS commodity_repayment,
         COALESCE(mt_form.amount, 0) AS membership_loan_form,
         COALESCE(mt_other.amount, 0) AS other_charges,
         -- Calculate total deduction as sum of all components
@@ -722,8 +749,10 @@ async function getDeductions(req, res) {
          COALESCE(mt_savings_bank.amount, 0) +
          COALESCE(mt_loan_repayment.amount, 0) + 
          COALESCE(mt_loan_repayment_bank.amount, 0) +
-         COALESCE(mt_loan_interest.amount, 0) + 
-         COALESCE(mt_commodity.amount, 0) + 
+         COALESCE(mt_loan_interest.amount, 0) +
+         COALESCE(mt_loan_interest_bank.amount, 0) +
+         COALESCE(mt_commodity.amount, 0) +
+         COALESCE(mt_commodity_bank.amount, 0) +
          COALESCE(mt_form.amount, 0) + 
          COALESCE(mt_other.amount, 0)) AS total_deductions
       FROM members m
@@ -732,7 +761,9 @@ async function getDeductions(req, res) {
       LEFT JOIN monthly_trans mt_loan_repayment ON mt_loan_repayment.member_id = m.id AND mt_loan_repayment.column_key = 'loan_repayment' AND mt_loan_repayment.month = $1 AND mt_loan_repayment.year = $2
       LEFT JOIN monthly_trans mt_loan_repayment_bank ON mt_loan_repayment_bank.member_id = m.id AND mt_loan_repayment_bank.column_key = 'loan_repayment_bank' AND mt_loan_repayment_bank.month = $1 AND mt_loan_repayment_bank.year = $2
       LEFT JOIN monthly_trans mt_loan_interest ON mt_loan_interest.member_id = m.id AND mt_loan_interest.column_key = 'loan_int_paid' AND mt_loan_interest.month = $1 AND mt_loan_interest.year = $2
+      LEFT JOIN monthly_trans mt_loan_interest_bank ON mt_loan_interest_bank.member_id = m.id AND mt_loan_interest_bank.column_key = 'loan_int_paid_bank' AND mt_loan_interest_bank.month = $1 AND mt_loan_interest_bank.year = $2
       LEFT JOIN monthly_trans mt_commodity ON mt_commodity.member_id = m.id AND mt_commodity.column_key = 'comm_repayment' AND mt_commodity.month = $1 AND mt_commodity.year = $2
+      LEFT JOIN monthly_trans mt_commodity_bank ON mt_commodity_bank.member_id = m.id AND mt_commodity_bank.column_key = 'comm_repayment_bank' AND mt_commodity_bank.month = $1 AND mt_commodity_bank.year = $2
       LEFT JOIN monthly_trans mt_form ON mt_form.member_id = m.id AND mt_form.column_key = 'form' AND mt_form.month = $1 AND mt_form.year = $2
       LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges' AND mt_other.month = $1 AND mt_other.year = $2
       WHERE m.is_active = TRUE

@@ -17,7 +17,9 @@ const normalizeReconKey = (value) => String(value ?? '').trim().toLowerCase();
 // TOTAL DEDUCTION = sum of these only
 const DEDUCTION_KEYS = new Set([
   'savings',
+  'savings_bank',
   'loan_repayment',
+  'loan_repayment_bank',
   'loan_interest',
   'commodity_repayment',
   'membership_loan_form',

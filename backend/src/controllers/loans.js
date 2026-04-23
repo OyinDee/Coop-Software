@@ -227,21 +227,40 @@ async function addRepayment(req, res) {
       await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is fully settled' });
     }
 
-    // For cleared loans, only interest payments are allowed (principal already 0)
-    const principalAmount = loan.status === 'cleared'
-      ? 0
-      : (principal_paid !== undefined ? parseFloat(principal_paid) : parseFloat(loan.monthly_principal));
-    const interestAmount = interest_paid !== undefined
+    const remainingBalance = parseFloat(loan.remaining_balance) || 0;
+    const totalInterest = parseFloat(loan.total_interest) || 0;
+    const interestPaidSoFar = parseFloat(loan.interest_paid) || 0;
+    const interestRemaining = Math.max(0, totalInterest - interestPaidSoFar);
+
+    const requestedPrincipal = principal_paid !== undefined
+      ? parseFloat(principal_paid)
+      : parseFloat(loan.monthly_principal);
+    const requestedInterest = interest_paid !== undefined
       ? parseFloat(interest_paid)
       : parseFloat(loan.monthly_interest);
 
-    const newBalance = Math.max(0, parseFloat(loan.remaining_balance) - principalAmount);
-    const newMonthsRemaining = Math.max(0, (loan.months_remaining || loan.months) - 1);
-    const newInterestPaid = Math.min(
-      parseFloat(loan.total_interest),
-      parseFloat(loan.interest_paid) + interestAmount
-    );
-    const newMonthsPaid = loan.months_paid + 1;
+    if ((requestedPrincipal || 0) < 0 || (requestedInterest || 0) < 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'principal_paid and interest_paid must be non-negative' });
+    }
+
+    const principalAmount = loan.status === 'cleared'
+      ? 0
+      : Math.min(Math.max(0, requestedPrincipal || 0), remainingBalance);
+    const interestAmount = Math.min(Math.max(0, requestedInterest || 0), interestRemaining);
+
+    if (principalAmount <= 0 && interestAmount <= 0) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'No payable amount remains for this loan' });
+    }
+
+    const newBalance = Math.max(0, remainingBalance - principalAmount);
+    const shouldCountInstallment = principalAmount > 0 || (loan.status !== 'active' && interestAmount > 0);
+    const newMonthsRemaining = shouldCountInstallment
+      ? Math.max(0, (loan.months_remaining || loan.months) - 1)
+      : Math.max(0, loan.months_remaining || loan.months);
+    const newInterestPaid = Math.min(totalInterest, interestPaidSoFar + interestAmount);
+    const newMonthsPaid = shouldCountInstallment ? loan.months_paid + 1 : loan.months_paid;
     // Keep cleared if principal already 0; flip active→cleared if principal hits 0
     const newStatus = newBalance <= 0 ? 'cleared' : 'active';
     // Fully settled when both principal and interest are paid
