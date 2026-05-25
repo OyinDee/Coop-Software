@@ -5,7 +5,7 @@ const nodemailer = require('nodemailer');
 db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
 const XLSX = require('xlsx');           // npm install xlsx  (already in most Node stacks)
 const { parse } = require('csv-parse/sync');
-const { parse } = require('csv-parse/sync');
+
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
