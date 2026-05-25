@@ -75,16 +75,25 @@ async function createLoan(req, res) {
     return res.status(400).json({ error: 'member_id and principal are required' });
   }
 
+  // FIX #8: Validate principal is positive
+  const principalValue = parseFloat(principal);
+  if (principalValue <= 0) {
+    return res.status(400).json({ error: 'principal must be greater than 0' });
+  }
+
   // Month/year when loan is issued (default: current month)
   const now = new Date();
   const issuedMonth = parseInt(month) || (now.getMonth() + 1);
   const issuedYear  = parseInt(year)  || now.getFullYear();
 
+  // Validate month/year
+  if (issuedMonth < 1 || issuedMonth > 12 || issuedYear < 2000 || issuedYear > 9999) {
+    return res.status(400).json({ error: 'Invalid issued month/year' });
+  }
+
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
-
-    const p = parseFloat(principal);
 
     // Fetch current interest rate from settings (default 5%)
     const settingsRes = await client.query(
@@ -97,16 +106,25 @@ async function createLoan(req, res) {
 
     if (months) {
       m = parseInt(months);
-      monthly_principal = p / m;
+      if (m <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'months must be greater than 0' });
+      }
+      monthly_principal = principalValue / m;
     } else if (monthly_payment) {
-      const totalRepayment = parseFloat(monthly_payment);
-      m = Math.ceil((p * (1 + rate)) / totalRepayment);
-      monthly_principal = p / m;
+      const mp = parseFloat(monthly_payment);
+      if (mp <= 0) {
+        await client.query('ROLLBACK');
+        return res.status(400).json({ error: 'monthly_payment must be greater than 0' });
+      }
+      m = Math.ceil((principalValue * (1 + rate)) / mp);
+      monthly_principal = principalValue / m;
     } else {
+      await client.query('ROLLBACK');
       return res.status(400).json({ error: 'Either months or monthly_payment required' });
     }
 
-    const total_interest = p * rate;
+    const total_interest = principalValue * rate;
     const monthly_interest = total_interest / m;
     const issuedDate = new Date(Date.UTC(issuedYear, issuedMonth - 1, 1));
 
@@ -114,7 +132,7 @@ async function createLoan(req, res) {
       INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, months_remaining, interest_rate, status, date_issued)
       VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$3,$8,'active',$9)
       RETURNING *
-    `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest, rate, issuedDate]);
+    `, [member_id, principalValue, m, principalValue, monthly_principal, total_interest, monthly_interest, rate, issuedDate]);
 
     // Set loan_granted for the issued month (additive — support multiple loans in one month)
     await client.query(`
@@ -122,7 +140,7 @@ async function createLoan(req, res) {
       VALUES ($1, 'loan_granted', $2, $3, $4)
       ON CONFLICT (member_id, column_key, month, year)
       DO UPDATE SET amount = monthly_trans.amount + EXCLUDED.amount, updated_at = NOW()
-    `, [member_id, p, issuedMonth, issuedYear]);
+    `, [member_id, principalValue, issuedMonth, issuedYear]);
 
     // Set loan_int_charged for the issued month (flat-rate: full interest charged at inception)
     await client.query(`
@@ -178,10 +196,10 @@ async function deleteLoan(req, res) {
     const oldPrincipal = parseFloat(old.principal);
     const oldTotalInterest = parseFloat(old.total_interest) || 0;
 
-    // Get the issued month/year from date_issued
+    // FIX #3: Use consistent UTC timezone handling
     const issuedDate  = old.date_issued ? new Date(old.date_issued) : new Date();
-    const issuedMonth = issuedDate.getMonth() + 1;
-    const issuedYear  = issuedDate.getFullYear();
+    const issuedMonth = issuedDate.getUTCMonth() + 1;
+    const issuedYear  = issuedDate.getUTCFullYear();
 
     // Delete from loans table
     await client.query('DELETE FROM loans WHERE id=$1', [id]);
@@ -223,8 +241,10 @@ async function addRepayment(req, res) {
     const loanRes = await client.query('SELECT * FROM loans WHERE id=$1 FOR UPDATE', [id]);
     const loan = loanRes.rows[0];
     if (!loan) { await client.query('ROLLBACK'); return res.status(404).json({ error: 'Loan not found' }); }
+
+    // FIX #5: Fix logic - check if interest is still owed
     const interestStillOwed = parseFloat(loan.total_interest) - parseFloat(loan.interest_paid) > 0;
-    if (loan.status !== 'active' && !interestStillOwed) {
+    if (loan.status === 'cleared' && !interestStillOwed) {
       await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is fully settled' });
     }
 
@@ -236,9 +256,11 @@ async function addRepayment(req, res) {
       return res.status(400).json({ error: 'Invalid repayment month/year' });
     }
 
+    // FIX #3: Use consistent UTC timezone for date calculations
     const issuedDate = loan.date_issued ? new Date(loan.date_issued) : new Date();
     const issuedMonth = issuedDate.getUTCMonth() + 1;
     const issuedYear = issuedDate.getUTCFullYear();
+    
     let firstRepaymentMonth = issuedMonth + 1;
     let firstRepaymentYear = issuedYear;
     if (firstRepaymentMonth > 12) {
@@ -246,8 +268,9 @@ async function addRepayment(req, res) {
       firstRepaymentYear += 1;
     }
 
-    const repaymentPeriod = repYear * 100 + repMonth;
-    const firstAllowedPeriod = firstRepaymentYear * 100 + firstRepaymentMonth;
+    // FIX #6: Better month comparison using absolute month count
+    const repaymentPeriod = repYear * 12 + repMonth;
+    const firstAllowedPeriod = firstRepaymentYear * 12 + firstRepaymentMonth;
     if (repaymentPeriod < firstAllowedPeriod) {
       await client.query('ROLLBACK');
       return res.status(400).json({
@@ -260,17 +283,13 @@ async function addRepayment(req, res) {
     const interestPaidSoFar = parseFloat(loan.interest_paid) || 0;
     const interestRemaining = Math.max(0, totalInterest - interestPaidSoFar);
 
+    // FIX #7: Better NaN handling for parsed values
     const requestedPrincipal = principal_paid !== undefined
-      ? parseFloat(principal_paid)
-      : parseFloat(loan.monthly_principal);
+      ? Math.max(0, parseFloat(principal_paid) || 0)
+      : Math.max(0, parseFloat(loan.monthly_principal) || 0);
     const requestedInterest = interest_paid !== undefined
-      ? parseFloat(interest_paid)
-      : parseFloat(loan.monthly_interest);
-
-    if ((requestedPrincipal || 0) < 0 || (requestedInterest || 0) < 0) {
-      await client.query('ROLLBACK');
-      return res.status(400).json({ error: 'principal_paid and interest_paid must be non-negative' });
-    }
+      ? Math.max(0, parseFloat(interest_paid) || 0)
+      : Math.max(0, parseFloat(loan.monthly_interest) || 0);
 
     const principalAmount = loan.status === 'cleared'
       ? 0
@@ -289,9 +308,9 @@ async function addRepayment(req, res) {
       : Math.max(0, loan.months_remaining || loan.months);
     const newInterestPaid = Math.min(totalInterest, interestPaidSoFar + interestAmount);
     const newMonthsPaid = shouldCountInstallment ? loan.months_paid + 1 : loan.months_paid;
-    // Keep cleared if principal already 0; flip active→cleared if principal hits 0
+    
+    // Determine final status
     const newStatus = newBalance <= 0 ? 'cleared' : 'active';
-    // Fully settled when both principal and interest are paid
     const fullySettled = newBalance <= 0 && newInterestPaid >= parseFloat(loan.total_interest);
     const finalStatus = fullySettled ? 'cleared' : newStatus;
 
@@ -300,10 +319,33 @@ async function addRepayment(req, res) {
       WHERE id=$6
     `, [newBalance, newInterestPaid, newMonthsPaid, newMonthsRemaining, finalStatus, id]);
 
+    // FIX #10: Record repayment in loan_repayments table
     await client.query(`
       INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)
       VALUES ($1,$2,$3,$4,$5,$6,$7)
     `, [id, loan.member_id, principalAmount, interestAmount, repMonth, repYear, description || null]);
+
+    // FIX #10: Update monthly_trans with repayment amounts
+    if (principalAmount > 0) {
+      await client.query(`
+        INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+        VALUES ($1, 'loan_repayment', $2, $3, $4)
+        ON CONFLICT (member_id, column_key, month, year)
+        DO UPDATE SET amount = monthly_trans.amount + EXCLUDED.amount, updated_at = NOW()
+      `, [loan.member_id, principalAmount, repMonth, repYear]);
+    }
+
+    if (interestAmount > 0) {
+      await client.query(`
+        INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+        VALUES ($1, 'loan_int_paid', $2, $3, $4)
+        ON CONFLICT (member_id, column_key, month, year)
+        DO UPDATE SET amount = monthly_trans.amount + EXCLUDED.amount, updated_at = NOW()
+      `, [loan.member_id, interestAmount, repMonth, repYear]);
+    }
+
+    // FIX #1: Recalculate loan_ledger_bal and loan_int_cf for the repayment month
+    await recalcLoanTrans(client, loan.member_id, repMonth, repYear);
 
     await client.query('COMMIT');
     res.json({ message: 'Repayment recorded', newBalance, newStatus: finalStatus });

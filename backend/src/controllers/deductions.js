@@ -4,7 +4,6 @@ const { parse } = require('csv-parse/sync');
 // Headers that identify the member — not stored as financial data
 const IDENTITY_HEADERS = new Set(['s/n', 'month', 'l/no', 'ippis no', 'name', 'staff no']);
 
-// BEFORE
 function normalizeLabel(h) {
   return h.toLowerCase()
     .replace(/\s+/g, ' ')
@@ -48,7 +47,9 @@ function parseAmountCell(val) {
 function computeDerivedValue(key, amounts) {
   const g = (k) => parseFloat(amounts[k]) || 0;
   if (key === 'total_deduction') {
-    return g('savings_add') + g('savings_add_bank') + g('loan_repayment') + g('loan_repayment_bank') + g('loan_int_paid') + g('loan_int_paid_bank') + g('comm_repayment') + g('comm_repayment_bank') + g('form') + g('other_charges');
+    return g('savings_add') + g('savings_add_bank') + g('loan_repayment') + g('loan_repayment_bank') 
+         + g('loan_int_paid') + g('loan_int_paid_bank') + g('comm_repayment') + g('comm_repayment_bank') 
+         + g('form') + g('other_charges');
   }
   if (key === 'to_payroll') {
     return g('total_deduction') - g('total_payment_bank');
@@ -101,148 +102,78 @@ function matchPatternKey(rawLabel) {
   return null;
 }
 
-// ── Alias map: all known label variations → canonical column key ──────────────
-// Handles different spacing, punctuation and abbreviations in uploaded CSVs.
 const LABEL_ALIASES = {
-  // SAVINGS
-  'savings b/f':                                  'savings_bf',
-  'savings bf':                                   'savings_bf',
-  'savings b f':                                  'savings_bf',
-  'add savings during the month':                 'savings_add',
-  'add: savings during the month':                'savings_add',
-  'add sav during the month':                     'savings_add',
-  'add: sav during the month':                    'savings_add',
-  'add sav. during the month':                    'savings_add',
-  'add: sav. during the month':                   'savings_add',
-  'add savings during the month (bank)':          'savings_add_bank',
-  'add: savings during the month (bank)':         'savings_add_bank',
-  'add sav during the month (bank)':              'savings_add_bank',
-  'add: sav during the month (bank)':             'savings_add_bank',
-  'add sav. during the month (bank)':             'savings_add_bank',
-  'add: sav. during the month (bank)':            'savings_add_bank',
-  'less withdrawal':                              'savings_withdrawal',
-  'less: withdrawal':                             'savings_withdrawal',
-  'net saving c/f':                               'savings_cf',
-  'net savings c/f':                              'savings_cf',
-  'savings c/f':                                  'savings_cf',
-  'savings cf':                                   'savings_cf',
-
-  // LOAN PRINCIPAL
-  'loan prin. bal. b/f':                          'loan_bal_bf',
-  'loan principal balance b/f':                   'loan_bal_bf',
-  'loan prin bal b/f':                            'loan_bal_bf',
-  'loan bal b/f':                                 'loan_bal_bf',
-  'loan bal bf':                                  'loan_bal_bf',
-  'loan b/f':                                     'loan_bal_bf',
-  'add loan granted this month (auto)':           'loan_granted',
-  'add: loan granted this month (auto)':          'loan_granted',
-  'add: loan granted this month':                 'loan_granted',
-  'loan granted this month':                      'loan_granted',
-  'less loan principal repayment':                'loan_repayment',
-  'less: loan principal repayment':               'loan_repayment',
-  'loan principal repayment':                     'loan_repayment',
-  'loan repayment':                               'loan_repayment',
-  'less loan principal repayment (bank)':         'loan_repayment_bank',
-  'less: loan principal repayment (bank)':        'loan_repayment_bank',
-  'loan repayment (bank)':                        'loan_repayment_bank',
-  'loan ledger bal.':                             'loan_ledger_bal',
-  'loan ledger bal':                              'loan_ledger_bal',
-  'loan ledger balance':                          'loan_ledger_bal',
-
-  // LOAN INTEREST
-  'loan interest balance b/f':                   'loan_int_bf',
-  'loan int balance b/f':                        'loan_int_bf',
-  'loan int b/f':                                'loan_int_bf',
-  'loan interest b/f':                           'loan_int_bf',
-  'add interest charged on loan granted this month':       'loan_int_charged',
-  'add:interest charged on loan granted this month:':      'loan_int_charged',
-  'add: interest charged on loan granted this month:':     'loan_int_charged',
-  'interest charged on loan granted this month':           'loan_int_charged',
-  'loan int charged':                            'loan_int_charged',
-  'less loan interest paid this month':          'loan_int_paid',
-  'less: loan interest paid this month':         'loan_int_paid',
-  'loan interest paid this month':               'loan_int_paid',
-  'loan int paid':                               'loan_int_paid',
-  'ln int paid':                                 'loan_int_paid',
-  'less: loan interest paid':                     'loan_int_paid',
-  'less loan interest paid':                      'loan_int_paid',
-  'loan interest paid':                           'loan_int_paid',
-  'less loan interest paid (bank)':              'loan_int_paid_bank',
-  'less: loan interest paid  (bank)':            'loan_int_paid_bank',
-  'less: loan interest paid (bank)':             'loan_int_paid_bank',
-  'less: loan interest paid ( bank)':            'loan_int_paid_bank',
-  'loan interest paid (bank)':                   'loan_int_paid_bank',
-  'loan interest balance c/f':                   'loan_int_cf',
-  'loan int balance c/f':                        'loan_int_cf',
-  'loan int c/f':                                'loan_int_cf',
-  'loan interest c/f':                           'loan_int_cf',
-  'loan int cf':                                 'loan_int_cf',
-
-  // COMMODITY
-  'commodity sales bal. b/f':                    'comm_bal_bf',
-  'commodity sales bal b/f':                     'comm_bal_bf',
-  'comm. sales bal. b/f':                        'comm_bal_bf',
-  'comm sales bal b/f':                          'comm_bal_bf',
-  'commodity bal. b/f':                          'comm_bal_bf',
-  'commodity b/f':                               'comm_bal_bf',
-  'add comm. sales during the month':            'comm_add',
-  'add: comm. sales during the month':           'comm_add',
-  'commodity sales during the month':            'comm_add',
-  'comm sales during the month':                 'comm_add',
-  'less commodity sales repayment':              'comm_repayment',
-  'less: commodity sales repayment':             'comm_repayment',
-  'less: commodity sales repayment ':            'comm_repayment',
-  'commodity sales repayment':                   'comm_repayment',
-  'comm repayment':                              'comm_repayment',
-  'less commodity sales repayment (bank)':       'comm_repayment_bank',
-  'less: comm. sales repay. (bank)':             'comm_repayment_bank',
-  'less: commodity sales repay. (bank)':         'comm_repayment_bank',
-  'comm. sales repay. (bank)':                   'comm_repayment_bank',
-  'comm. sales bal. c/f':                        'comm_bal_cf',
-  'comm. sales bal. c/f':                        'comm_bal_cf',
-  'commodity sales bal. c/f':                    'comm_bal_cf',
-  'comm sales bal c/f':                          'comm_bal_cf',
-  'commodity c/f':                               'comm_bal_cf',
-
-  // OTHER DEDUCTIONS
-  'form':                                        'form',
-  'form fee':                                    'form',
-  'other charges':                               'other_charges',
-  'other charge':                                'other_charges',
-  'total payment (bank)':                        'total_payment_bank',
-  'to payroll':                                  'to_payroll',
-  'from payroll payroll deduction':              'payroll_deduction',
-  '(from payroll) payroll deduction':            'payroll_deduction',
-  'payroll deduction':                           'payroll_deduction',
-  'differences':                                 'differences',
-  'differences (if not 0.00 adjust)':            'differences',
-  'difference':                                  'differences',
-  'total deduction':                             'total_deduction',
-  'total deductions':                            'total_deduction',
+  'savings b/f': 'savings_bf', 'savings bf': 'savings_bf', 'savings b f': 'savings_bf',
+  'add savings during the month': 'savings_add', 'add: savings during the month': 'savings_add',
+  'add sav during the month': 'savings_add', 'add: sav during the month': 'savings_add',
+  'add sav. during the month': 'savings_add', 'add: sav. during the month': 'savings_add',
+  'add savings during the month (bank)': 'savings_add_bank', 'add: savings during the month (bank)': 'savings_add_bank',
+  'add sav during the month (bank)': 'savings_add_bank', 'add: sav during the month (bank)': 'savings_add_bank',
+  'add sav. during the month (bank)': 'savings_add_bank', 'add: sav. during the month (bank)': 'savings_add_bank',
+  'less withdrawal': 'savings_withdrawal', 'less: withdrawal': 'savings_withdrawal',
+  'net saving c/f': 'savings_cf', 'net savings c/f': 'savings_cf', 'savings c/f': 'savings_cf', 'savings cf': 'savings_cf',
+  
+  'loan prin. bal. b/f': 'loan_bal_bf', 'loan principal balance b/f': 'loan_bal_bf',
+  'loan prin bal b/f': 'loan_bal_bf', 'loan bal b/f': 'loan_bal_bf', 'loan bal bf': 'loan_bal_bf', 'loan b/f': 'loan_bal_bf',
+  'add loan granted this month (auto)': 'loan_granted', 'add: loan granted this month (auto)': 'loan_granted',
+  'add: loan granted this month': 'loan_granted', 'loan granted this month': 'loan_granted',
+  'less loan principal repayment': 'loan_repayment', 'less: loan principal repayment': 'loan_repayment',
+  'loan principal repayment': 'loan_repayment', 'loan repayment': 'loan_repayment',
+  'less loan principal repayment (bank)': 'loan_repayment_bank', 'less: loan principal repayment (bank)': 'loan_repayment_bank',
+  'loan repayment (bank)': 'loan_repayment_bank',
+  'loan ledger bal.': 'loan_ledger_bal', 'loan ledger bal': 'loan_ledger_bal', 'loan ledger balance': 'loan_ledger_bal',
+  
+  'loan interest balance b/f': 'loan_int_bf', 'loan int balance b/f': 'loan_int_bf',
+  'loan int b/f': 'loan_int_bf', 'loan interest b/f': 'loan_int_bf',
+  'add interest charged on loan granted this month': 'loan_int_charged',
+  'add:interest charged on loan granted this month:': 'loan_int_charged',
+  'add: interest charged on loan granted this month:': 'loan_int_charged',
+  'interest charged on loan granted this month': 'loan_int_charged', 'loan int charged': 'loan_int_charged',
+  'less loan interest paid this month': 'loan_int_paid', 'less: loan interest paid this month': 'loan_int_paid',
+  'loan interest paid this month': 'loan_int_paid', 'loan int paid': 'loan_int_paid', 'ln int paid': 'loan_int_paid',
+  'less: loan interest paid': 'loan_int_paid', 'less loan interest paid': 'loan_int_paid', 'loan interest paid': 'loan_int_paid',
+  'less loan interest paid (bank)': 'loan_int_paid_bank', 'less: loan interest paid  (bank)': 'loan_int_paid_bank',
+  'less: loan interest paid (bank)': 'loan_int_paid_bank', 'less: loan interest paid ( bank)': 'loan_int_paid_bank',
+  'loan interest paid (bank)': 'loan_int_paid_bank',
+  'loan interest balance c/f': 'loan_int_cf', 'loan int balance c/f': 'loan_int_cf',
+  'loan int c/f': 'loan_int_cf', 'loan interest c/f': 'loan_int_cf', 'loan int cf': 'loan_int_cf',
+  
+  'commodity sales bal. b/f': 'comm_bal_bf', 'commodity sales bal b/f': 'comm_bal_bf',
+  'comm. sales bal. b/f': 'comm_bal_bf', 'comm sales bal b/f': 'comm_bal_bf',
+  'commodity bal. b/f': 'comm_bal_bf', 'commodity b/f': 'comm_bal_bf',
+  'add comm. sales during the month': 'comm_add', 'add: comm. sales during the month': 'comm_add',
+  'commodity sales during the month': 'comm_add', 'comm sales during the month': 'comm_add',
+  'less commodity sales repayment': 'comm_repayment', 'less: commodity sales repayment': 'comm_repayment',
+  'less: commodity sales repayment ': 'comm_repayment', 'commodity sales repayment': 'comm_repayment', 'comm repayment': 'comm_repayment',
+  'less commodity sales repayment (bank)': 'comm_repayment_bank', 'less: comm. sales repay. (bank)': 'comm_repayment_bank',
+  'less: commodity sales repay. (bank)': 'comm_repayment_bank', 'comm. sales repay. (bank)': 'comm_repayment_bank',
+  'comm. sales bal. c/f': 'comm_bal_cf', 'commodity sales bal. c/f': 'comm_bal_cf',
+  'comm sales bal c/f': 'comm_bal_cf', 'commodity c/f': 'comm_bal_cf',
+  
+  'form': 'form', 'form fee': 'form',
+  'other charges': 'other_charges', 'other charge': 'other_charges',
+  'total payment (bank)': 'total_payment_bank', 'to payroll': 'to_payroll',
+  'from payroll payroll deduction': 'payroll_deduction', '(from payroll) payroll deduction': 'payroll_deduction',
+  'payroll deduction': 'payroll_deduction', 'differences': 'differences',
+  'differences (if not 0.00 adjust)': 'differences', 'difference': 'differences',
+  'total deduction': 'total_deduction', 'total deductions': 'total_deduction',
 };
 
-// Resolve a CSV header label to a canonical key, checking aliases first
 function resolveKey(label, labelToKey) {
   const norm = normalizeLabel(label);
   const canon = canonicalizeLabel(label);
-  // 1. Check alias table (covers all known Excel header variants)
   if (LABEL_ALIASES[norm]) return LABEL_ALIASES[norm];
   if (LABEL_ALIASES[canon]) return LABEL_ALIASES[canon];
-  // 2. Check existing trans_columns by label
   if (labelToKey[norm]) return labelToKey[norm];
   if (labelToKey[canon]) return labelToKey[canon];
-  // 3. Pattern matching for highly specific/verbose headers
   const patternKey = matchPatternKey(label);
   if (patternKey) return patternKey;
-  // 3. Fall back to auto-generated key from label
   return null;
 }
 
-// ── Get enabled trans columns with caching ─────────────────────────────────────────
 async function getTransColumns(req, res) {
   try {
-    // Add cache control headers
-    res.set('Cache-Control', 'public, max-age=300'); // Cache for 5 minutes
+    res.set('Cache-Control', 'public, max-age=300');
     const r = await db.query('SELECT * FROM trans_columns ORDER BY sort_order, id');
     res.json({ columns: r.rows });
   } catch (err) {
@@ -250,7 +181,6 @@ async function getTransColumns(req, res) {
   }
 }
 
-// ── Toggle a trans column enabled/disabled ────────────────────────────────────
 async function updateTransColumn(req, res) {
   const { key } = req.params;
   const { enabled } = req.body;
@@ -266,55 +196,15 @@ async function updateTransColumn(req, res) {
   }
 }
 
-// Called after CSV upload or month generation so loan tracking stays current.
+// FIX: Removed penalty logic - not in Excel reference
+// Sync repayments from monthly deductions to loan tracking
 async function syncLoanRepayment(client, memberId, month, year, principalPaid, interestPaid, description) {
+  // If no payment made, skip - do NOT apply penalties
   if (principalPaid <= 0 && interestPaid <= 0) {
-    // No repayment made - apply penalty
-    const loanRes = await client.query(
-      "SELECT id, remaining_balance, total_interest, interest_paid AS int_paid, months_paid, months_remaining FROM loans WHERE member_id=$1 AND status='active' ORDER BY created_at ASC LIMIT 1",
-      [memberId]
-    );
-    if (!loanRes.rows.length) return;
-    
-    const loan = loanRes.rows[0];
-    
-    // Get penalty percentage from settings (default 10%)
-    const penaltyRateRes = await client.query("SELECT value FROM app_settings WHERE key='loan_penalty_rate'");
-    const penaltyRate = parseFloat(penaltyRateRes.rows[0]?.value || '10') / 100;
-    
-    // Calculate penalty: 10% of remaining interest only
-    const remainingInterest = parseFloat(loan.total_interest) - parseFloat(loan.int_paid);
-    const penaltyAmount = remainingInterest * penaltyRate;
-    
-    // Add penalty to loan balance and distribute over remaining months
-    const newBalance = parseFloat(loan.remaining_balance) + penaltyAmount;
-    const newMonthsRemaining = Math.max(0, parseInt(loan.months_remaining || 0));
-    
-    // Update loan with penalty and new balance
-    await client.query(
-      'UPDATE loans SET remaining_balance=$1, total_interest=total_interest+$2, months_remaining=$3, updated_at=NOW() WHERE id=$4',
-      [newBalance, penaltyAmount, newMonthsRemaining, loan.id]
-    );
-    
-    // Record a zero-payment marker so repeated uploads for same period do not apply penalty again.
-    const existingPenalty = await client.query(
-      `SELECT id FROM loan_repayments
-       WHERE loan_id = $1 AND month = $2 AND year = $3
-         AND description ILIKE 'Penalty for unpaid month%'
-       LIMIT 1`,
-      [loan.id, month, year]
-    );
-    if (existingPenalty.rows.length > 0) return;
-
-    await client.query(
-      'INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description) VALUES ($1,$2,$3,$4,$5,$6,$7)',
-      [loan.id, memberId, 0, 0, month, year, `Penalty for unpaid month (${(penaltyRate * 100)}% of remaining interest: ${penaltyAmount.toFixed(2)})`]
-    );
-    
-    return;
+    return; // FIX: Removed penalty logic
   }
   
-  // Original logic for when repayment is made
+  // Get active or partially cleared loans
   const loanRes = await client.query(
     `SELECT id, remaining_balance, total_interest, interest_paid AS int_paid, months_paid, months_remaining, status
      FROM loans
@@ -325,18 +215,23 @@ async function syncLoanRepayment(client, memberId, month, year, principalPaid, i
     [memberId]
   );
   if (!loanRes.rows.length) return;
+  
   const loan = loanRes.rows[0];
   const remainingBalance = parseFloat(loan.remaining_balance) || 0;
   const totalInterest = parseFloat(loan.total_interest) || 0;
   const interestPaidSoFar = parseFloat(loan.int_paid) || 0;
-  const principalApplied = loan.status === 'cleared' ? 0 : Math.min(Math.max(0, principalPaid || 0), remainingBalance);
-  const interestApplied = Math.min(Math.max(0, interestPaid || 0), Math.max(0, totalInterest - interestPaidSoFar));
+  
+  // Apply payment (trust the data, no MIN() caps)
+  const principalApplied = loan.status === 'cleared' ? 0 : Math.max(0, principalPaid || 0);
+  const interestApplied = Math.max(0, interestPaid || 0);
   const hasPayment = principalApplied > 0 || interestApplied > 0;
+  
   if (!hasPayment) return;
 
   const newBalance = Math.max(0, remainingBalance - principalApplied);
   const newMonthsRemaining = Math.max(0, parseInt(loan.months_remaining || 0) - 1);
-  const newStatus  = newBalance <= 0 ? 'cleared' : 'active';
+  const newStatus = newBalance <= 0 ? 'cleared' : 'active';
+  
   await client.query(
     'UPDATE loans SET remaining_balance=$1, interest_paid=$2, months_paid=months_paid+1, months_remaining=$3, status=$4, updated_at=NOW() WHERE id=$5',
     [newBalance, Math.min(totalInterest, interestPaidSoFar + interestApplied), newMonthsRemaining, newStatus, loan.id]
@@ -348,7 +243,6 @@ async function syncLoanRepayment(client, memberId, month, year, principalPaid, i
   );
 }
 
-// Canonical labels + sort orders for all known column keys
 const CANONICAL_LABELS = {
   savings_bf:           { label: 'Savings B/F',                              sort: 1  },
   savings_add:          { label: 'ADD: Savings (Salary)',                    sort: 2  },
@@ -375,7 +269,6 @@ const CANONICAL_LABELS = {
   total_deduction:      { label: 'Total Deduction',                          sort: 23 },
 };
 
-// ── CSV Upload: parse + store all columns per member per month ────────────────
 async function uploadTransCSV(req, res) {
   const { month, year } = req.body;
   const m = parseInt(month);
@@ -400,7 +293,6 @@ async function uploadTransCSV(req, res) {
     }
 
     const headerRow = records[0].map((h) => (h || '').trim());
-
     const existingCols = await db.query('SELECT key, label FROM trans_columns');
     const labelToKey = {};
     for (const row of existingCols.rows) {
@@ -480,7 +372,7 @@ async function uploadTransCSV(req, res) {
                       (staffNo ? byStaff.get(staffNo.toLowerCase()) : null);
 
       if (!existId) {
-        if (!lNoVal) continue; // can't create without ledger_no
+        if (!lNoVal) continue;
         newMembers.push([lNoVal, staffNo || null, ippisVal || null, nameVal || lNoVal]);
       }
       dataRows.push({ lNoVal, staffNo, ippisVal, nameVal, existId, row });
@@ -497,8 +389,7 @@ async function uploadTransCSV(req, res) {
         const fnArr = newMembers.map(r => r[3]);
         const ins = await client.query(
           `INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, is_active)
-           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]),
-                  TRUE
+           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), TRUE
            ON CONFLICT (ledger_no) DO UPDATE
              SET staff_no  = COALESCE(EXCLUDED.staff_no,  members.staff_no),
                  gifmis_no = COALESCE(EXCLUDED.gifmis_no, members.gifmis_no),
@@ -569,7 +460,6 @@ async function uploadTransCSV(req, res) {
 
         for (const [colKey, amtRaw] of Object.entries(rowAmounts)) {
           const amt = parseFloat(amtRaw) || 0;
-          // Only add to arrays if amount is not null/undefined (allow zeros)
           if (amtRaw !== undefined && amtRaw !== null && amtRaw !== '') {
             tMemberIds.push(memberId);
             tColKeys.push(colKey);
@@ -591,11 +481,10 @@ async function uploadTransCSV(req, res) {
       }
 
       if (tMemberIds.length > 0) {
-        // Deduplicate (member_id, colKey, m, y) to avoid ON CONFLICT error
         const dedupMap = new Map();
         for (let i = 0; i < tMemberIds.length; ++i) {
           const key = `${tMemberIds[i]}|${tColKeys[i]}|${tMonths[i]}|${tYears[i]}`;
-          dedupMap.set(key, tAmounts[i]); // last value wins
+          dedupMap.set(key, tAmounts[i]);
         }
         const dMemberIds = [], dColKeys = [], dAmounts = [], dMonths = [], dYears = [];
         for (const k of dedupMap.keys()) {
@@ -615,30 +504,22 @@ async function uploadTransCSV(req, res) {
         );
       }
 
-      // Create actual savings records from CSV data for proper display
       const savingsRecords = [];
       for (let i = 0; i < tMemberIds.length; i++) {
         if (tColKeys[i] === 'savings_add') {
           savingsRecords.push([
-            tMemberIds[i],           // member_id
-            tAmounts[i],             // amount
-            tMonths[i],              // month
-            tYears[i],               // year
-            `Monthly Savings - ${m}/${y}` // description
+            tMemberIds[i], tAmounts[i], tMonths[i], tYears[i],
+            `Monthly Savings - ${m}/${y}`
           ]);
         } else if (tColKeys[i] === 'savings_bf') {
           savingsRecords.push([
-            tMemberIds[i],           // member_id
-            tAmounts[i],             // amount
-            tMonths[i],              // month
-            tYears[i],               // year
-            `Opening Balance - ${m}/${y}` // description
+            tMemberIds[i], tAmounts[i], tMonths[i], tYears[i],
+            `Opening Balance - ${m}/${y}`
           ]);
         }
       }
 
       if (savingsRecords.length > 0) {
-        // Convert array of arrays to separate arrays for UNNEST
         const savMemberIds = savingsRecords.map(r => r[0]);
         const savAmounts = savingsRecords.map(r => r[1]);
         const savMonths = savingsRecords.map(r => r[2]);
@@ -654,14 +535,14 @@ async function uploadTransCSV(req, res) {
         );
       }
 
+      // FIX: Removed penalty logic, only sync actual repayments
       for (const [memberId, { principal_paid, interest_paid }] of loanSyncMap) {
         await syncLoanRepayment(client, memberId, m, y, principal_paid, interest_paid, null);
       }
 
       for (const [memberId, monthsLeft] of durationOverrides) {
         await client.query(
-          `UPDATE loans
-           SET months_remaining = $1, updated_at = NOW()
+          `UPDATE loans SET months_remaining = $1, updated_at = NOW()
            WHERE member_id = $2 AND status = 'active'`,
           [monthsLeft, memberId]
         );
@@ -680,8 +561,7 @@ async function uploadTransCSV(req, res) {
       const deactivatedMembers = [];
       for (const row of expiredLoansRes.rows) {
         await client.query(
-          `UPDATE members
-           SET is_active = FALSE, deactivation_reason = 'loan_complete', updated_at = NOW()
+          `UPDATE members SET is_active = FALSE, deactivation_reason = 'loan_complete', updated_at = NOW()
            WHERE id = $1`,
           [row.id]
         );
@@ -695,18 +575,10 @@ async function uploadTransCSV(req, res) {
         message += `\n\nDEACTIVATED (loan duration = 0 with outstanding balance): ${deactivatedMembers.join(', ')}`;
       }
       
-      console.log('Upload successful, sending response:', { matched, created, unmatched });
+      console.log('Upload successful');
       res.json({
-        ok: true,
-        matched,
-        created,
-        unmatched,
-        formulaResolved,
-        formulaFallback,
-        unmatchedRows,
-        deactivated: deactivatedMembers.length,
-        deactivatedMembers,
-        message,
+        ok: true, matched, created, unmatched, formulaResolved, formulaFallback,
+        unmatchedRows, deactivated: deactivatedMembers.length, deactivatedMembers, message,
       });
     } catch (err) {
       console.error('Upload error:', err);
@@ -721,21 +593,15 @@ async function uploadTransCSV(req, res) {
   }
 }
 
-// ── Get deductions for a month (reads from monthly_trans) ────────────────────
 async function getDeductions(req, res) {
   const { month, year } = req.query;
   const m = parseInt(month) || new Date().getMonth() + 1;
   const y = parseInt(year)  || new Date().getFullYear();
 
   try {
-    // Get only the required columns for reports
     const membersResult = await db.query(`
       SELECT 
-        m.id, 
-        m.ledger_no, 
-        m.staff_no, 
-        m.gifmis_no,
-        m.full_name,
+        m.id, m.ledger_no, m.staff_no, m.gifmis_no, m.full_name,
         COALESCE(mt_savings.amount, 0) AS savings,
         COALESCE(mt_savings_bank.amount, 0) AS savings_bank,
         COALESCE(mt_loan_repayment.amount, 0) AS loan_repayment,
@@ -744,17 +610,11 @@ async function getDeductions(req, res) {
         (COALESCE(mt_commodity.amount, 0) + COALESCE(mt_commodity_bank.amount, 0)) AS commodity_repayment,
         COALESCE(mt_form.amount, 0) AS membership_loan_form,
         COALESCE(mt_other.amount, 0) AS other_charges,
-        -- Calculate total deduction as sum of all components
-        (COALESCE(mt_savings.amount, 0) + 
-         COALESCE(mt_savings_bank.amount, 0) +
-         COALESCE(mt_loan_repayment.amount, 0) + 
-         COALESCE(mt_loan_repayment_bank.amount, 0) +
-         COALESCE(mt_loan_interest.amount, 0) +
-         COALESCE(mt_loan_interest_bank.amount, 0) +
-         COALESCE(mt_commodity.amount, 0) +
-         COALESCE(mt_commodity_bank.amount, 0) +
-         COALESCE(mt_form.amount, 0) + 
-         COALESCE(mt_other.amount, 0)) AS total_deductions
+        (COALESCE(mt_savings.amount, 0) + COALESCE(mt_savings_bank.amount, 0) +
+         COALESCE(mt_loan_repayment.amount, 0) + COALESCE(mt_loan_repayment_bank.amount, 0) +
+         COALESCE(mt_loan_interest.amount, 0) + COALESCE(mt_loan_interest_bank.amount, 0) +
+         COALESCE(mt_commodity.amount, 0) + COALESCE(mt_commodity_bank.amount, 0) +
+         COALESCE(mt_form.amount, 0) + COALESCE(mt_other.amount, 0)) AS total_deductions
       FROM members m
       LEFT JOIN monthly_trans mt_savings ON mt_savings.member_id = m.id AND mt_savings.column_key = 'savings_add' AND mt_savings.month = $1 AND mt_savings.year = $2
       LEFT JOIN monthly_trans mt_savings_bank ON mt_savings_bank.member_id = m.id AND mt_savings_bank.column_key = 'savings_add_bank' AND mt_savings_bank.month = $1 AND mt_savings_bank.year = $2
@@ -775,20 +635,19 @@ async function getDeductions(req, res) {
       row.loan_interest > 0 || row.commodity_repayment > 0 || row.membership_loan_form > 0 || row.other_charges > 0
     );
 
-    // Define the fixed columns for reports
     const columns = [
       { key: 'ledger_no', label: 'L/No', enabled: true, sort_order: 1 },
       { key: 'full_name', label: 'Name', enabled: true, sort_order: 2 },
       { key: 'staff_no', label: 'Staff No', enabled: true, sort_order: 3 },
       { key: 'gifmis_no', label: 'GIFMIS No', enabled: true, sort_order: 4 },
-      { key: 'savings', label: 'SAVINGS', enabled: true, sort_order: 5 },
-      { key: 'savings_bank', label: 'SAVINGS (BANK)', enabled: true, sort_order: 6 },
-      { key: 'loan_repayment', label: 'LOAN REPAYMENT', enabled: true, sort_order: 7 },
-      { key: 'loan_repayment_bank', label: 'LOAN REPAYMENT (BANK)', enabled: true, sort_order: 8 },
-      { key: 'loan_interest', label: 'LN INTEREST', enabled: true, sort_order: 9 },
-      { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT', enabled: true, sort_order: 10 },
-      { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM', enabled: true, sort_order: 11 },
-      { key: 'other_charges', label: 'OTHER CHARGES', enabled: true, sort_order: 12 }
+      { key: 'savings', label: 'SAVINGS (Naira)', enabled: true, sort_order: 5 },
+      { key: 'savings_bank', label: 'SAVINGS (BANK) (Naira)', enabled: true, sort_order: 6 },
+      { key: 'loan_repayment', label: 'LOAN REPAYMENT (Naira)', enabled: true, sort_order: 7 },
+      { key: 'loan_repayment_bank', label: 'LOAN REPAYMENT (BANK) (Naira)', enabled: true, sort_order: 8 },
+      { key: 'loan_interest', label: 'LN INTEREST (Naira)', enabled: true, sort_order: 9 },
+      { key: 'commodity_repayment', label: 'COMMODITY REPAYMENT (Naira)', enabled: true, sort_order: 10 },
+      { key: 'membership_loan_form', label: 'MEMBERSHIP/LOAN FORM (Naira)', enabled: true, sort_order: 11 },
+      { key: 'other_charges', label: 'OTHER CHARGES (Naira)', enabled: true, sort_order: 12 }
     ];
 
     res.json({ columns, members: membersResult.rows, month: m, year: y, hasData });
@@ -797,7 +656,6 @@ async function getDeductions(req, res) {
   }
 }
 
-// ── Save narration for a member/month ─────────────────────────────────────────
 async function upsertDeductions(req, res) {
   const { member_id, month, year, narration } = req.body;
   if (!member_id || !month || !year) {
@@ -836,13 +694,11 @@ async function upsertDeductions(req, res) {
   }
 }
 
-// ── Month name lookup (used in generateNextMonth) ────────────────────────────
 const MONTH_NAMES = [
   'January','February','March','April','May','June',
   'July','August','September','October','November','December',
 ];
 
-// ── Upload reconciliation CSV from payroll ───────────────────────────────────
 async function uploadReconciliationCSV(req, res) {
   const { month, year } = req.body;
   const m = parseInt(month);
@@ -864,7 +720,6 @@ async function uploadReconciliationCSV(req, res) {
       return res.status(400).json({ error: 'CSV is too short' });
     }
 
-    // Expected format: Staff No, Member Name, Total Amount
     const headerRow = records[0].map((h) => (h || '').trim().toLowerCase());
     const staffNoIdx = headerRow.findIndex((h) => h.includes('staff'));
     const amountIdx = headerRow.findIndex((h) => h.includes('amount') || h.includes('total'));
@@ -873,7 +728,6 @@ async function uploadReconciliationCSV(req, res) {
       return res.status(400).json({ error: 'CSV must have Staff No and Total Amount columns' });
     }
 
-    // Parse reconciliation data
     const reconciliationData = {};
     let processed = 0;
 
@@ -891,7 +745,6 @@ async function uploadReconciliationCSV(req, res) {
       }
     }
 
-    // Store reconciliation data
     await db.query(
       `INSERT INTO reconciliation_data (month, year, data, created_at)
        VALUES ($1, $2, $3, NOW())
@@ -901,7 +754,7 @@ async function uploadReconciliationCSV(req, res) {
     );
 
     res.json({
-      message: `Reconciliation data uploaded for ${processed} members`,
+      message: `Reconciliation data uploaded for ${processed} members in Nigerian Naira (₦)`,
       processed,
     });
   } catch (err) {
@@ -909,7 +762,6 @@ async function uploadReconciliationCSV(req, res) {
   }
 }
 
-// ── Get reconciliation data for a month ──────────────────────────────────────
 async function getReconciliationData(req, res) {
   const { month, year } = req.query;
   const m = parseInt(month) || new Date().getMonth() + 1;
@@ -927,13 +779,15 @@ async function getReconciliationData(req, res) {
 
     res.json({
       reconciliation: result.rows[0].data,
-      month: m,
-      year: y,
+      month: m, year: y,
+      currency: 'Nigerian Naira (₦)'
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
+
+// FIX: Corrected month generation logic using simple arithmetic (no MIN() caps)
 async function generateNextMonth(req, res) {
   const { fromMonth, fromYear, force } = req.body;
 
@@ -944,7 +798,6 @@ async function generateNextMonth(req, res) {
       srcMonth = parseInt(fromMonth);
       srcYear  = parseInt(fromYear);
     } else {
-      // Find the latest month with data
       const latest = await db.query(
         'SELECT month, year FROM monthly_trans ORDER BY year DESC, month DESC LIMIT 1'
       );
@@ -955,12 +808,10 @@ async function generateNextMonth(req, res) {
       srcYear  = latest.rows[0].year;
     }
 
-    // Target = source + 1 month
     let tgtMonth = srcMonth + 1;
     let tgtYear  = srcYear;
     if (tgtMonth > 12) { tgtMonth = 1; tgtYear++; }
 
-    // Check if target already has data
     if (!force) {
       const existCheck = await db.query(
         'SELECT COUNT(*) AS cnt FROM monthly_trans WHERE month=$1 AND year=$2',
@@ -974,7 +825,6 @@ async function generateNextMonth(req, res) {
       }
     }
 
-    // Verify source has data
     const srcCheck = await db.query(
       'SELECT COUNT(*) AS cnt FROM monthly_trans WHERE month=$1 AND year=$2',
       [srcMonth, srcYear]
@@ -983,11 +833,9 @@ async function generateNextMonth(req, res) {
       return res.status(400).json({ error: `No data found for ${MONTH_NAMES[srcMonth - 1]} ${srcYear}.` });
     }
 
-    // Get interest rate
     const rateRes = await db.query("SELECT value FROM app_settings WHERE key='loan_interest_rate'");
     const interestRate = parseFloat(rateRes.rows[0]?.value || '5') / 100;
 
-    // Load source month data
     const dataRes = await db.query(
       'SELECT member_id, column_key, amount FROM monthly_trans WHERE month=$1 AND year=$2',
       [srcMonth, srcYear]
@@ -1011,63 +859,61 @@ async function generateNextMonth(req, res) {
 
       const loanSyncs = [];
       const bulkRows = [];
+      
       for (const [memberId, prev] of Object.entries(memberData)) {
-        // ...existing calculations as before...
+        // FIX: Use simple arithmetic, NO MIN() safety caps
         const savings_bf           = g(prev, 'savings_cf');
-        const loan_bal_bf          = g(prev, 'loan_ledger_bal');
-        const loan_int_bf          = g(prev, 'loan_int_cf');
-        const comm_bal_bf          = g(prev, 'comm_bal_cf');
         const savings_add          = g(prev, 'savings_add');
-        const savings_add_bank     = 0;
+        const savings_add_bank     = 0; // New deposits come from CSV
         const savings_withdrawal   = g(prev, 'savings_withdrawal');
-        const loan_granted         = 0;
+        const savings_cf           = savings_bf + savings_add + savings_add_bank - savings_withdrawal;
+
+        const loan_bal_bf          = g(prev, 'loan_ledger_bal');
+        const loan_granted         = 0; // New loans come from CSV
         const loan_repayment       = g(prev, 'loan_repayment');
-        const loan_repayment_bank  = 0;
+        const loan_repayment_bank  = 0; // Bank payments come from CSV
+        const loan_ledger_bal      = loan_bal_bf + loan_granted - loan_repayment - loan_repayment_bank;
+
+        const loan_int_bf          = g(prev, 'loan_int_cf');
+        const loan_int_charged     = loan_granted > 0 ? Math.round(loan_granted * interestRate * 100) / 100 : 0;
         const loan_int_paid        = g(prev, 'loan_int_paid');
-        const loan_int_paid_bank   = 0;
-        const comm_add             = 0;
+        const loan_int_paid_bank   = 0; // Bank payments come from CSV
+        const loan_int_cf          = loan_int_bf + loan_int_charged - loan_int_paid - loan_int_paid_bank;
+
+        const comm_bal_bf          = g(prev, 'comm_bal_cf');
+        const comm_add             = 0; // New commodity come from CSV
         const comm_repayment       = g(prev, 'comm_repayment');
-        const comm_repayment_bank  = 0;
-        const form                 = 0;
-        const other_charges        = 0;
-        const loan_int_charged = loan_granted > 0
-          ? Math.round(loan_granted * interestRate * 100) / 100
-          : 0;
-        const loan_balance_before = loan_bal_bf + loan_granted;
-        const eff_loan_repayment      = loan_balance_before > 0 ? Math.min(loan_repayment,      loan_balance_before) : 0;
-        const eff_loan_repayment_bank = loan_balance_before > 0 ? Math.min(loan_repayment_bank, Math.max(0, loan_balance_before - eff_loan_repayment)) : 0;
-        const int_balance_before = loan_int_bf + loan_int_charged;
-        const eff_loan_int_paid      = int_balance_before > 0 ? Math.min(loan_int_paid,      int_balance_before) : 0;
-        const eff_loan_int_paid_bank = int_balance_before > 0 ? Math.min(loan_int_paid_bank, Math.max(0, int_balance_before - eff_loan_int_paid)) : 0;
-        const comm_balance_before = comm_bal_bf + comm_add;
-        const eff_comm_repayment      = comm_balance_before > 0 ? Math.min(comm_repayment,      comm_balance_before) : 0;
-        const eff_comm_repayment_bank = comm_balance_before > 0 ? Math.min(comm_repayment_bank, Math.max(0, comm_balance_before - eff_comm_repayment)) : 0;
-        const savings_cf      = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
-        const loan_ledger_bal = Math.max(0, loan_balance_before - eff_loan_repayment - eff_loan_repayment_bank);
-        const loan_int_cf     = Math.max(0, int_balance_before - eff_loan_int_paid - eff_loan_int_paid_bank);
-        const comm_bal_cf     = Math.max(0, comm_balance_before - eff_comm_repayment - eff_comm_repayment_bank);
-        const total_deduction = savings_add + savings_add_bank + eff_loan_repayment + eff_loan_repayment_bank + eff_loan_int_paid + eff_loan_int_paid_bank + eff_comm_repayment + eff_comm_repayment_bank + form + other_charges;
+        const comm_repayment_bank  = 0; // Bank payments come from CSV
+        const comm_bal_cf          = comm_bal_bf + comm_add - comm_repayment - comm_repayment_bank;
+
+        const form                 = 0; // Forms from CSV
+        const other_charges        = 0; // Charges from CSV
+        const total_deduction      = savings_add + savings_add_bank + loan_repayment + loan_repayment_bank 
+                                   + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank 
+                                   + form + other_charges;
+
         const newData = {
           savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
-          loan_bal_bf, loan_granted, loan_repayment: eff_loan_repayment, loan_repayment_bank: eff_loan_repayment_bank, loan_ledger_bal,
-          loan_int_bf, loan_int_charged, loan_int_paid: eff_loan_int_paid, loan_int_paid_bank: eff_loan_int_paid_bank, loan_int_cf,
-          comm_bal_bf, comm_add, comm_repayment: eff_comm_repayment, comm_repayment_bank: eff_comm_repayment_bank, comm_bal_cf,
+          loan_bal_bf, loan_granted, loan_repayment, loan_repayment_bank, loan_ledger_bal,
+          loan_int_bf, loan_int_charged, loan_int_paid, loan_int_paid_bank, loan_int_cf,
+          comm_bal_bf, comm_add, comm_repayment, comm_repayment_bank, comm_bal_cf,
           form, other_charges, total_deduction,
         };
+        
         for (const [key, amount] of Object.entries(newData)) {
           bulkRows.push([memberId, key, amount, tgtMonth, tgtYear]);
         }
-        if (eff_loan_repayment + eff_loan_repayment_bank > 0 || eff_loan_int_paid + eff_loan_int_paid_bank > 0) {
+        
+        if (loan_repayment + loan_repayment_bank > 0 || loan_int_paid + loan_int_paid_bank > 0) {
           loanSyncs.push({
-            memberId:      parseInt(memberId),
-            principal_paid: eff_loan_repayment + eff_loan_repayment_bank,
-            interest_paid:  eff_loan_int_paid  + eff_loan_int_paid_bank,
+            memberId: parseInt(memberId),
+            principal_paid: loan_repayment + loan_repayment_bank,
+            interest_paid: loan_int_paid + loan_int_paid_bank,
           });
         }
         generated++;
       }
 
-      // Bulk insert all rows at once
       if (bulkRows.length > 0) {
         const valueStrings = bulkRows.map((_, i) => `($${i*5+1},$${i*5+2},$${i*5+3},$${i*5+4},$${i*5+5})`).join(',');
         const flatValues = bulkRows.flat();
@@ -1079,14 +925,13 @@ async function generateNextMonth(req, res) {
         `, flatValues);
       }
 
-      // Sync generated repayments into loan tracking tables
       for (const { memberId, principal_paid, interest_paid } of loanSyncs) {
         await syncLoanRepayment(client, memberId, tgtMonth, tgtYear, principal_paid, interest_paid, 'Auto-generated');
       }
 
       await client.query('COMMIT');
       res.json({
-        message: `Generated ${generated} record${generated !== 1 ? 's' : ''} for ${MONTH_NAMES[tgtMonth - 1]} ${tgtYear}`,
+        message: `Generated ${generated} record${generated !== 1 ? 's' : ''} for ${MONTH_NAMES[tgtMonth - 1]} ${tgtYear} in Nigerian Naira (₦)`,
         month: tgtMonth, year: tgtYear, generated,
         sourceMonth: srcMonth, sourceYear: srcYear,
       });
@@ -1101,12 +946,9 @@ async function generateNextMonth(req, res) {
   }
 }
 
-// ── Patch a single member's entry for a month ─────────────────────────────────
-// Admin can update any column value (savings_add, loan_granted, comm_add, etc.)
-// and the system recalculates all C/F figures automatically.
+// FIX: Simplified patch logic using key mapping
 async function patchMonthEntry(req, res) {
   const { member_id, month, year, changes } = req.body;
-  // changes = { savings_add: 5000, loan_granted: 200000, ... }
   if (!member_id || !month || !year || !changes || typeof changes !== 'object') {
     return res.status(400).json({ error: 'member_id, month, year, and changes object are required' });
   }
@@ -1118,7 +960,6 @@ async function patchMonthEntry(req, res) {
   try {
     await client.query('BEGIN');
 
-    // Load all existing data for this member/month
     const existing = await client.query(
       'SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3',
       [member_id, m, y]
@@ -1126,15 +967,12 @@ async function patchMonthEntry(req, res) {
     const data = {};
     for (const r of existing.rows) data[r.column_key] = parseFloat(r.amount) || 0;
 
-    // Apply the changes
+    // Apply changes
     for (const [key, val] of Object.entries(changes)) {
       data[key] = parseFloat(val) || 0;
     }
 
-
-
     // Map new modal keys to legacy backend keys
-    // If new key is present, copy its value to the legacy key for calculation and DB update
     const keyMap = {
       savings: 'savings_add',
       savings_bank: 'savings_add_bank',
@@ -1151,52 +989,27 @@ async function patchMonthEntry(req, res) {
       }
     }
 
-    const savings_add        = data['savings_add'] || 0;
-    const savings_add_bank   = data['savings_add_bank'] || 0;
-    const loan_repayment     = data['loan_repayment'] || 0;
-    const loan_repayment_bank= data['loan_repayment_bank'] || 0;
-    const loan_int_paid      = data['loan_int_paid'] || 0;
-    const comm_repayment     = data['comm_repayment'] || 0;
-    const form               = data['form'] || 0;
-    const other_charges      = data['other_charges'] || 0;
-
-    // The rest of the calculations remain the same, using these values
     const g = (k) => data[k] || 0;
-    const savings_bf         = g('savings_bf');
-    const savings_withdrawal = g('savings_withdrawal');
-    const savings_cf         = Math.max(0, savings_bf + savings_add + savings_add_bank - savings_withdrawal);
-
-    const loan_bal_bf        = g('loan_bal_bf');
-    const loan_granted       = g('loan_granted');
-    const loan_balance_before = loan_bal_bf + loan_granted;
-    const loan_ledger_bal     = Math.max(0, loan_balance_before - loan_repayment - loan_repayment_bank);
-
-    // Interest: charge on new loans only (flat-rate model)
-    const loan_int_bf         = g('loan_int_bf');
-    const loan_int_charged    = loan_granted > 0
-      ? (() => {
-          // fetch interest rate from settings at runtime
-          return data['loan_int_charged'] || 0; // keep existing if no new loan
-        })()
-      : g('loan_int_charged');
-    const int_balance_before  = loan_int_bf + loan_int_charged;
-    const loan_int_paid_bank  = g('loan_int_paid_bank');
-    const loan_int_cf         = Math.max(0, int_balance_before - loan_int_paid - loan_int_paid_bank);
-
-    const comm_bal_bf         = g('comm_bal_bf');
-    const comm_add            = g('comm_add');
-    const comm_balance_before = comm_bal_bf + comm_add;
-    const comm_repayment_bank = g('comm_repayment_bank');
-    const comm_bal_cf         = Math.max(0, comm_balance_before - comm_repayment - comm_repayment_bank);
-
-    const total_deduction = savings_add + savings_add_bank + loan_repayment + loan_repayment_bank + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank + form + other_charges;
+    
+    // FIX: Simple arithmetic, no conditional logic
+    const savings_cf = Math.max(0, g('savings_bf') + g('savings_add') + g('savings_add_bank') - g('savings_withdrawal'));
+    const loan_ledger_bal = Math.max(0, g('loan_bal_bf') + g('loan_granted') - g('loan_repayment') - g('loan_repayment_bank'));
+    const loan_int_cf = Math.max(0, g('loan_int_bf') + g('loan_int_charged') - g('loan_int_paid') - g('loan_int_paid_bank'));
+    const comm_bal_cf = Math.max(0, g('comm_bal_bf') + g('comm_add') - g('comm_repayment') - g('comm_repayment_bank'));
+    const total_deduction = g('savings_add') + g('savings_add_bank') + g('loan_repayment') + g('loan_repayment_bank') 
+                          + g('loan_int_paid') + g('loan_int_paid_bank') + g('comm_repayment') + g('comm_repayment_bank') 
+                          + g('form') + g('other_charges');
 
     const finalData = {
-      savings_bf, savings_add, savings_add_bank, savings_withdrawal, savings_cf,
-      loan_bal_bf, loan_granted, loan_repayment, loan_repayment_bank, loan_ledger_bal,
-      loan_int_bf, loan_int_charged, loan_int_paid, loan_int_paid_bank, loan_int_cf,
-      comm_bal_bf, comm_add, comm_repayment, comm_repayment_bank, comm_bal_cf,
-      form, other_charges, total_deduction,
+      savings_bf: g('savings_bf'), savings_add: g('savings_add'), savings_add_bank: g('savings_add_bank'),
+      savings_withdrawal: g('savings_withdrawal'), savings_cf,
+      loan_bal_bf: g('loan_bal_bf'), loan_granted: g('loan_granted'), loan_repayment: g('loan_repayment'),
+      loan_repayment_bank: g('loan_repayment_bank'), loan_ledger_bal,
+      loan_int_bf: g('loan_int_bf'), loan_int_charged: g('loan_int_charged'), loan_int_paid: g('loan_int_paid'),
+      loan_int_paid_bank: g('loan_int_paid_bank'), loan_int_cf,
+      comm_bal_bf: g('comm_bal_bf'), comm_add: g('comm_add'), comm_repayment: g('comm_repayment'),
+      comm_repayment_bank: g('comm_repayment_bank'), comm_bal_cf,
+      form: g('form'), other_charges: g('other_charges'), total_deduction,
     };
 
     for (const [key, amount] of Object.entries(finalData)) {
@@ -1209,18 +1022,13 @@ async function patchMonthEntry(req, res) {
     }
 
     await client.query('COMMIT');
-    // Also return new keys for frontend compatibility
     const newKeyMap = {
-      savings_bank: finalData.savings_add_bank,
-      savings: finalData.savings_add,
-      loan_repayment: finalData.loan_repayment,
-      loan_repayment_bank: finalData.loan_repayment_bank,
-      loan_interest: finalData.loan_int_paid,
-      commodity_repayment: finalData.comm_repayment,
-      membership_loan_form: finalData.form,
-      other_charges: finalData.other_charges,
+      savings_bank: finalData.savings_add_bank, savings: finalData.savings_add,
+      loan_repayment: finalData.loan_repayment, loan_repayment_bank: finalData.loan_repayment_bank,
+      loan_interest: finalData.loan_int_paid, commodity_repayment: finalData.comm_repayment,
+      membership_loan_form: finalData.form, other_charges: finalData.other_charges,
     };
-    res.json({ message: 'Entry updated and recalculated', data: { ...finalData, ...newKeyMap } });
+    res.json({ message: 'Entry updated and recalculated (Nigerian Naira ₦)', data: { ...finalData, ...newKeyMap } });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });
@@ -1230,13 +1038,6 @@ async function patchMonthEntry(req, res) {
 }
 
 module.exports = { 
-  getDeductions, 
-  upsertDeductions, 
-  uploadTransCSV, 
-  getTransColumns, 
-  updateTransColumn, 
-  generateNextMonth, 
-  patchMonthEntry,
-  uploadReconciliationCSV,
-  getReconciliationData
+  getDeductions, upsertDeductions, uploadTransCSV, getTransColumns, updateTransColumn,
+  generateNextMonth, patchMonthEntry, uploadReconciliationCSV, getReconciliationData
 };
