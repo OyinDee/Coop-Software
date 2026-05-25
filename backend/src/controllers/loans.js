@@ -108,12 +108,13 @@ async function createLoan(req, res) {
 
     const total_interest = p * rate;
     const monthly_interest = total_interest / m;
+    const issuedDate = new Date(Date.UTC(issuedYear, issuedMonth - 1, 1));
 
     const result = await client.query(`
-      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, months_remaining, interest_rate, status)
-      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$3,$8,'active')
+      INSERT INTO loans (member_id, principal, months, remaining_balance, monthly_principal, total_interest, monthly_interest, interest_paid, months_paid, months_remaining, interest_rate, status, date_issued)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,0,0,$3,$8,'active',$9)
       RETURNING *
-    `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest, rate]);
+    `, [member_id, p, m, p, monthly_principal, total_interest, monthly_interest, rate, issuedDate]);
 
     // Set loan_granted for the issued month (additive — support multiple loans in one month)
     await client.query(`
@@ -227,6 +228,33 @@ async function addRepayment(req, res) {
       await client.query('ROLLBACK'); return res.status(400).json({ error: 'Loan is fully settled' });
     }
 
+    const now = new Date();
+    const repMonth = parseInt(month, 10) || (now.getMonth() + 1);
+    const repYear = parseInt(year, 10) || now.getFullYear();
+    if (repMonth < 1 || repMonth > 12 || repYear < 2000 || repYear > 9999) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({ error: 'Invalid repayment month/year' });
+    }
+
+    const issuedDate = loan.date_issued ? new Date(loan.date_issued) : new Date();
+    const issuedMonth = issuedDate.getUTCMonth() + 1;
+    const issuedYear = issuedDate.getUTCFullYear();
+    let firstRepaymentMonth = issuedMonth + 1;
+    let firstRepaymentYear = issuedYear;
+    if (firstRepaymentMonth > 12) {
+      firstRepaymentMonth = 1;
+      firstRepaymentYear += 1;
+    }
+
+    const repaymentPeriod = repYear * 100 + repMonth;
+    const firstAllowedPeriod = firstRepaymentYear * 100 + firstRepaymentMonth;
+    if (repaymentPeriod < firstAllowedPeriod) {
+      await client.query('ROLLBACK');
+      return res.status(400).json({
+        error: `Repayment starts from ${String(firstRepaymentMonth).padStart(2, '0')}/${firstRepaymentYear}`,
+      });
+    }
+
     const remainingBalance = parseFloat(loan.remaining_balance) || 0;
     const totalInterest = parseFloat(loan.total_interest) || 0;
     const interestPaidSoFar = parseFloat(loan.interest_paid) || 0;
@@ -275,7 +303,7 @@ async function addRepayment(req, res) {
     await client.query(`
       INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)
       VALUES ($1,$2,$3,$4,$5,$6,$7)
-    `, [id, loan.member_id, principalAmount, interestAmount, month, year, description || null]);
+    `, [id, loan.member_id, principalAmount, interestAmount, repMonth, repYear, description || null]);
 
     await client.query('COMMIT');
     res.json({ message: 'Repayment recorded', newBalance, newStatus: finalStatus });
