@@ -16,23 +16,12 @@ const adminRoutes      = require('./routes/admin');
 
 const app = express();
 
-const allowedOrigins = [
-  'http://localhost:5173',
-  'https://ssanu-coop.vercel.app',   // hardcoded fallback
-  process.env.FRONTEND_URL,
-].filter(Boolean);
-
 app.use(cors({
-  origin: (origin, cb) => {
-    if (!origin || allowedOrigins.includes(origin)) return cb(null, true);
-    cb(new Error(`CORS blocked: ${origin}`));
-  },
-  credentials: true,
-  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
+  origin: '*',
+  methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
   allowedHeaders: ['Content-Type', 'Authorization'],
 }));
 
-// Explicitly handle preflight for all routes
 app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
