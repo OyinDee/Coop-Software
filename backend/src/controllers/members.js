@@ -23,25 +23,19 @@ function resolveMonthYear(monthRaw, yearRaw) {
 }
 
 function getMailer() {
-  const host = process.env.SMTP_HOST;
-  const port = parseInt(process.env.SMTP_PORT || '587', 10);
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
-  const from = process.env.SMTP_FROM || user;
 
-  if (!host || !port || !user || !pass || !from) {
-    return { error: 'Missing SMTP configuration. Set SMTP_HOST, SMTP_PORT, SMTP_USER, SMTP_PASS, SMTP_FROM.' };
+  if (!user || !pass) {
+    return { error: 'Missing SMTP configuration. Set SMTP_USER and SMTP_PASS.' };
   }
 
-  const secure = process.env.SMTP_SECURE === 'true' || port === 465;
   const transporter = nodemailer.createTransport({
-    host,
-    port,
-    secure,
+    service: 'gmail',
     auth: { user, pass },
   });
 
-  return { transporter, from };
+  return { transporter, from: user };
 }
 
 async function getMonthlyReport(memberId, month, year) {
