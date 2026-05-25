@@ -41,6 +41,18 @@ async function migrate() {
       );
     `);
 
+    // Members indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_full_name_text ON members USING gin(to_tsvector('english', full_name))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_ledger_no_text ON members USING gin(to_tsvector('english', ledger_no))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_staff_no_text ON members USING gin(to_tsvector('english', staff_no))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_department_text ON members USING gin(to_tsvector('english', department))`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_active_created ON members(is_active, created_at)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_composite ON members(is_active, ledger_no)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_count ON members(is_active) WHERE is_active = TRUE`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_is_active ON members(is_active)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_ledger_no ON members(ledger_no)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_staff_no ON members(staff_no)`);
+
     // Loans table
     await client.query(`
       CREATE TABLE IF NOT EXISTS loans (
@@ -61,6 +73,30 @@ async function migrate() {
       );
     `);
 
+    // Add interest_rate column to loans if not already present (for existing databases)
+    await client.query(`
+      ALTER TABLE loans ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(5,4) DEFAULT 0.05;
+    `);
+
+    // Add months_remaining column to loans (for diminishing balance calculation)
+    await client.query(`
+      ALTER TABLE loans ADD COLUMN IF NOT EXISTS months_remaining INTEGER;
+    `);
+
+    // Populate months_remaining for existing loans (= months - months_paid)
+    await client.query(`
+      UPDATE loans SET months_remaining = GREATEST(0, months - months_paid)
+      WHERE months_remaining IS NULL;
+    `);
+
+    // Loans indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_status ON loans(member_id, status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_active_balance ON loans(status, remaining_balance) WHERE status = 'active'`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_interest ON loans(member_id, total_interest, interest_paid)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_id ON loans(member_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_months_remaining ON loans(months_remaining)`);
+
     // Savings table
     await client.query(`
       CREATE TABLE IF NOT EXISTS savings (
@@ -75,6 +111,11 @@ async function migrate() {
       );
     `);
 
+    // Savings indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_amount ON savings(member_id, amount)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_month_year ON savings(member_id, month, year)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_id ON savings(member_id)`);
+
     // Shares table
     await client.query(`
       CREATE TABLE IF NOT EXISTS shares (
@@ -87,6 +128,9 @@ async function migrate() {
         UNIQUE(member_id, month, year)
       );
     `);
+
+    // Shares indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_shares_member_id ON shares(member_id)`);
 
     // Commodity table
     await client.query(`
@@ -101,6 +145,9 @@ async function migrate() {
       );
     `);
 
+    // Commodity indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_commodity_member_id ON commodity(member_id)`);
+
     // Loan repayments table
     await client.query(`
       CREATE TABLE IF NOT EXISTS loan_repayments (
@@ -114,6 +161,14 @@ async function migrate() {
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    // Add description to loan_repayments (for custom repayment narration)
+    await client.query(`
+      ALTER TABLE loan_repayments ADD COLUMN IF NOT EXISTS description TEXT;
+    `);
+
+    // Loan repayments indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_loan_repayments_member_id ON loan_repayments(member_id)`);
 
     // App settings table
     await client.query(`
@@ -132,79 +187,6 @@ async function migrate() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
-    // Add interest_rate column to loans if not already present (for existing databases)
-    await client.query(`
-      ALTER TABLE loans ADD COLUMN IF NOT EXISTS interest_rate NUMERIC(5,4) DEFAULT 0.05;
-    `);
-
-    // Add months_remaining column to loans (for diminishing balance calculation)
-    await client.query(`
-      ALTER TABLE loans ADD COLUMN IF NOT EXISTS months_remaining INTEGER;
-    `);
-
-    // Populate months_remaining for existing loans (= months - months_paid)
-    await client.query(`
-      UPDATE loans SET months_remaining = GREATEST(0, months - months_paid) 
-      WHERE months_remaining IS NULL;
-    `);
-
-    // Add performance indexes for large datasets
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_full_name_text ON members USING gin(to_tsvector('english', full_name))`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_ledger_no_text ON members USING gin(to_tsvector('english', ledger_no))`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_staff_no_text ON members USING gin(to_tsvector('english', staff_no))`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_department_text ON members USING gin(to_tsvector('english', department))`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_active_created ON members(is_active, created_at)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_composite ON members(is_active, ledger_no)`);
-
-    // Optimize savings table for large datasets
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_amount ON savings(member_id, amount)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_month_year ON savings(member_id, month, year)`);
-
-    // Optimize loans table for large datasets  
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_status ON loans(member_id, status)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_active_balance ON loans(status, remaining_balance) WHERE status = 'active'`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_interest ON loans(member_id, total_interest, interest_paid)`);
-
-    // Optimize monthly_trans for large datasets
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_composite ON monthly_trans(member_id, month, year, column_key)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_lookup ON monthly_trans(member_id, column_key)`);
-
-    // Add pagination count optimization
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_count ON members(is_active) WHERE is_active = TRUE`);
-
-    // ── Add indexes for optimal 700+ member performance ────────────────────────
-    // Members table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_is_active ON members(is_active)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_ledger_no ON members(ledger_no)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_members_staff_no ON members(staff_no)`);
-
-    // Savings table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_id ON savings(member_id)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_savings_member_month_year ON savings(member_id, month, year)`);
-
-    // Loans table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_id ON loans(member_id)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_status ON loans(status)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_member_status ON loans(member_id, status)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loans_months_remaining ON loans(months_remaining)`);
-
-    // Monthly_trans table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_id ON monthly_trans(member_id)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_month_year ON monthly_trans(month, year)`);
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_month_year ON monthly_trans(member_id, month, year)`);
-
-    // Commodity table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_commodity_member_id ON commodity(member_id)`);
-
-    // Shares table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_shares_member_id ON shares(member_id)`);
-
-    // Loan repayments table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_loan_repayments_member_id ON loan_repayments(member_id)`);
-
-    // Deduction narrations table
-    await client.query(`CREATE INDEX IF NOT EXISTS idx_deduction_narrations_member_month_year ON deduction_narrations(member_id, month, year)`);
-
     // Balance column configuration (fixed built-ins + admin-defined custom ones)
     await client.query(`
       CREATE TABLE IF NOT EXISTS balance_columns (
@@ -215,18 +197,6 @@ async function migrate() {
         enabled BOOLEAN DEFAULT TRUE,
         sort_order INTEGER DEFAULT 0,
         created_at TIMESTAMPTZ DEFAULT NOW()
-      );
-    `);
-
-    // Custom / "other" balance values per member (fixed columns are computed live)
-    await client.query(`
-      CREATE TABLE IF NOT EXISTS member_custom_balances (
-        id SERIAL PRIMARY KEY,
-        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
-        column_key VARCHAR(100) NOT NULL,
-        amount NUMERIC(15,2) DEFAULT 0,
-        updated_at TIMESTAMPTZ DEFAULT NOW(),
-        UNIQUE(member_id, column_key)
       );
     `);
 
@@ -241,9 +211,16 @@ async function migrate() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
-    // Add description to loan_repayments (for custom repayment narration)
+    // Custom / "other" balance values per member (fixed columns are computed live)
     await client.query(`
-      ALTER TABLE loan_repayments ADD COLUMN IF NOT EXISTS description TEXT;
+      CREATE TABLE IF NOT EXISTS member_custom_balances (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER REFERENCES members(id) ON DELETE CASCADE,
+        column_key VARCHAR(100) NOT NULL,
+        amount NUMERIC(15,2) DEFAULT 0,
+        updated_at TIMESTAMPTZ DEFAULT NOW(),
+        UNIQUE(member_id, column_key)
+      );
     `);
 
     // Monthly per-member custom deduction amounts (Form Fee, Other Charges, etc.)
@@ -272,6 +249,9 @@ async function migrate() {
       );
     `);
 
+    // Deduction narrations indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_deduction_narrations_member_month_year ON deduction_narrations(member_id, month, year)`);
+
     // Column definitions for monthly CSV upload (auto-registered on first upload)
     await client.query(`
       CREATE TABLE IF NOT EXISTS trans_columns (
@@ -297,6 +277,13 @@ async function migrate() {
         UNIQUE(member_id, column_key, month, year)
       );
     `);
+
+    // Monthly trans indexes
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_composite ON monthly_trans(member_id, month, year, column_key)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_lookup ON monthly_trans(member_id, column_key)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_id ON monthly_trans(member_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_month_year ON monthly_trans(month, year)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_monthly_trans_member_month_year ON monthly_trans(member_id, month, year)`);
 
     // Seed the standard columns matching the CSV header format (idempotent)
     await client.query(`

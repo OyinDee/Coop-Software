@@ -3,7 +3,8 @@ const nodemailer = require('nodemailer');
 // loans table needs optional description column – add it if it doesn't exist
 // (run once on startup, harmless if already present)
 db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
-
+const XLSX = require('xlsx');           // npm install xlsx  (already in most Node stacks)
+const { parse } = require('csv-parse/sync');
 const { parse } = require('csv-parse/sync');
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -518,163 +519,297 @@ async function importCSV(req, res) {
 
 async function importBalances(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
-
+ 
   try {
-    let csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
-    const records = parse(csvText, {
-      columns: true, skip_empty_lines: true, trim: true, relax_column_count: true,
-    });
-
+    let records = [];
+ 
+    const isXlsx =
+      req.file.originalname?.toLowerCase().endsWith('.xlsx') ||
+      req.file.originalname?.toLowerCase().endsWith('.xls') ||
+      req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      req.file.mimetype === 'application/vnd.ms-excel';
+ 
+    if (isXlsx) {
+      // ── Parse Excel ────────────────────────────────────────────────────────
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+      // header: 1 gives array-of-arrays; defval fills empty cells with ''
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+ 
+      if (rawRows.length < 2) {
+        return res.status(400).json({ error: 'Excel file appears to be empty' });
+      }
+ 
+      // First row = headers
+      const headers = rawRows[0].map(h => String(h).trim());
+      for (let i = 1; i < rawRows.length; i++) {
+        const row = rawRows[i];
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = String(row[idx] ?? '').trim(); });
+        records.push(obj);
+      }
+    } else {
+      // ── Parse CSV ──────────────────────────────────────────────────────────
+      const csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+      records = parse(csvText, {
+        columns: true,
+        skip_empty_lines: true,
+        trim: true,
+        relax_column_count: true,
+      });
+    }
+ 
     let imported = 0, skipped = 0;
     const errors = [];
-
+ 
     const parseAmt = (v) => {
-      const n = parseFloat((v || '').toString().replace(/,/g, '').trim());
+      const n = parseFloat(String(v || '').replace(/,/g, '').trim());
       return isNaN(n) ? 0 : n;
     };
-
-    // Detect trans-sheet format (has 'L/No' column) vs simple balance format
-    const firstRowKeys = records.length > 0
-      ? Object.keys(records[0]).map(k => k.trim().toUpperCase())
-      : [];
-    const isTransFormat = firstRowKeys.some(k => k === 'L/NO');
-
+ 
+    // ── Flexible column getter ─────────────────────────────────────────────
+    // Tries multiple possible header spellings (UPPERCASE) for each field.
+    // The xlsx uses abbreviated names; the simple CSV format uses full names.
+    const col = (r, ...keys) => {
+      const upper = {};
+      for (const k of Object.keys(r)) upper[k.trim().toUpperCase()] = r[k];
+      for (const k of keys) {
+        const val = upper[k.trim().toUpperCase()];
+        if (val !== undefined && val !== '') return val;
+      }
+      return '';
+    };
+ 
     for (const row of records) {
-      // Normalise all column names to UPPERCASE + trimmed
+      // Normalise all keys to uppercase for safe lookup
       const r = {};
-      for (const k of Object.keys(row)) r[k.trim().toUpperCase()] = (row[k] || '').toString().trim();
-
-      // Skip sub-header rows and totals rows — S/N must be a positive integer
-      const sn = (r['S/N'] || r['S/N.'] || '').trim();
+      for (const k of Object.keys(row)) r[k.trim().toUpperCase()] = String(row[k] || '').trim();
+ 
+      // ── Skip header/summary rows ───────────────────────────────────────
+      // S/N must be a positive integer; rows without it are totals / blanks
+      const sn = (r['S/N'] || r['S/N.'] || '').replace(/\s/g, '');
       if (!/^\d+$/.test(sn)) { skipped++; continue; }
-
-      const ledger_no = (r['L/NO'] || r['LEDGER NO'] || r['LEDGER NO.'] || r['LEDGER_NO'] || r['LEDGER'] || '').trim();
-      const staff_no  = (r['STAFF NO'] || r['STAFF NO.'] || r['STAFF_NO'] || r['STAFF'] || '').trim();
-      const full_name = (r['NAME'] || r['FULL NAME'] || '').trim();
-      const gifmis_no = (r['IPPIS NO'] || r['IPPIS NO.'] || r['GIFMIS NO'] || r['GIFMIS NO.'] || '').trim();
-
+ 
+      // ── Identifiers ────────────────────────────────────────────────────
+      const ledger_no = (
+        r['L/NO'] || r['L/NO.'] || r['LEDGER NO'] || r['LEDGER NO.'] ||
+        r['LEDGER_NO'] || r['LEDGER'] || ''
+      ).trim();
+ 
+      const staff_no = (
+        r['STAFF NO'] || r['STAFF NO.'] || r['STAFF_NO'] || r['STAFF'] || ''
+      ).trim();
+ 
       if (!ledger_no && !staff_no) {
         errors.push(`Row ${sn}: no ledger or staff number found`);
         skipped++; continue;
       }
-
-      // ── Look up member by ledger_no first, then staff_no ───────────────────
+ 
+      // ── Look up member ─────────────────────────────────────────────────
       let memberRes;
-      if (ledger_no) memberRes = await db.query(
-        'SELECT id FROM members WHERE UPPER(TRIM(ledger_no))=$1', [ledger_no.toUpperCase()]);
-      if ((!memberRes || !memberRes.rows.length) && staff_no) memberRes = await db.query(
-        'SELECT id FROM members WHERE UPPER(TRIM(staff_no))=$1', [staff_no.toUpperCase()]);
-
+      if (ledger_no) {
+        memberRes = await db.query(
+          'SELECT id FROM members WHERE UPPER(TRIM(ledger_no))=$1',
+          [ledger_no.toUpperCase()]
+        );
+      }
+      if ((!memberRes || !memberRes.rows.length) && staff_no) {
+        memberRes = await db.query(
+          'SELECT id FROM members WHERE UPPER(TRIM(staff_no))=$1',
+          [staff_no.toUpperCase()]
+        );
+      }
       if (!memberRes || !memberRes.rows.length) {
         errors.push(`${ledger_no || staff_no}: member not found — import members first via Import CSV`);
         skipped++; continue;
       }
       const memberId = memberRes.rows[0].id;
-
-      // ── Parse amounts from the correct columns based on format ────────────
-      let savingsBF, monthlySavings, loanBF, monthlyPrincipal, loanIntBF, monthlyInterest, commBF;
-
+ 
+      // ── Detect format ──────────────────────────────────────────────────
+      // Trans-sheet format: has L/NO column (the xlsx monthly sheet)
+      // Simple format: SAVINGS, LOAN, LN INT, COMM columns
+      const firstRowKeys = Object.keys(r).map(k => k.toUpperCase());
+      const isTransFormat = firstRowKeys.some(k => k === 'L/NO' || k === 'L/NO.');
+ 
+      // ── Parse amounts ──────────────────────────────────────────────────
+      let savingsBF, monthlySavings, savingsBank,
+          loanBF, monthlyPrincipal, loanPrinBank,
+          loanIntBF, monthlyInterest, loanIntBank,
+          commBF, commAdd, commRepay, commRepayBank,
+          formFee, otherCharges, totalDeduction;
+ 
       if (isTransFormat) {
-        savingsBF       = parseAmt(r['SAVINGS B/F']);
-        monthlySavings  = parseAmt(r['ADD: SAVINGS DURING THE MONTH']);
-        loanBF          = parseAmt(r['LOAN PRIN. BAL. B/F']);
-        monthlyPrincipal= parseAmt(r['LESS: LOAN PRINCIPAL REPAYMENT']);
-        loanIntBF       = parseAmt(r['LOAN INTEREST BALANCE B/F']);
-        monthlyInterest = parseAmt(r['LESS: LOAN INTEREST PAID THIS MONTH']);
-        commBF          = parseAmt(r['COMMODITY SALES BAL. B/F']);
+        // Columns from MM__FEB___2026.xlsx (abbreviated headers)
+        savingsBF        = parseAmt(r['SAVINGS B/F']);
+        monthlySavings   = parseAmt(r['ADD: SAV'] || r['ADD: SAVINGS DURING THE MONTH'] || r['ADD: SAVINGS']);
+        savingsBank      = parseAmt(r['ADD: SAV  (BANK)'] || r['ADD: SAV (BANK)'] || r['ADD: SAVINGS DURING THE MONTH (BANK)']);
+ 
+        loanBF           = parseAmt(r['LOAN PRIN. B/F'] || r['LOAN PRIN. BAL. B/F']);
+        monthlyPrincipal = parseAmt(r['LESS: LN. PRIN. REPAY.'] || r['LESS: LOAN PRINCIPAL REPAYMENT'] || r['LESS: LN. PRIN. REP.']);
+        loanPrinBank     = parseAmt(r['LESS: LN. PRIN. REP. (BANK)'] || r['LESS: LOAN PRINCIPAL REPAYMENT (BANK)']);
+ 
+        loanIntBF        = parseAmt(r['LOAN INT. BAL. B/F'] || r['LOAN INTEREST BALANCE B/F']);
+        monthlyInterest  = parseAmt(r['INT. PD.'] || r['INT. PD. (BANK)'] || r['LESS: LOAN INTEREST PAID THIS MONTH'] || r['INT PD']);
+        loanIntBank      = parseAmt(r['INT. PD.  (BANK)'] || r['INT. PD. (BANK)']);
+ 
+        commBF           = parseAmt(r['COM.  BAL. B/F'] || r['COMM. BAL. B/F'] || r['COMMODITY SALES BAL. B/F']);
+        commAdd          = parseAmt(r[' COMM.DURING'] || r['COMM.DURING'] || r['ADD: COMM. SALES DURING THE MONTH']);
+        commRepay        = parseAmt(r['COM. REPAY. '] || r['COM. REPAY.'] || r['LESS: COMMODITY SALES REPAYMENT']);
+        commRepayBank    = parseAmt(r['COM. REPAY. (BANK)'] || r['LESS: COMM. SALES REPAY. (BANK)']);
+ 
+        formFee          = parseAmt(r['FORM']);
+        otherCharges     = parseAmt(r['OTHER CHARGES']);
+        totalDeduction   = parseAmt(r['TOTAL DEDUCTION']);
+ 
       } else {
-        // Simple format — treat as Jan 2026 opening values directly
-        savingsBF       = 0;
-        monthlySavings  = parseAmt(r['SAVINGS']);
-        loanBF          = parseAmt(r['LOAN']);
-        monthlyPrincipal= loanBF > 0 ? parseAmt(r['MONTHLY PRINCIPAL'] || r['MONTHLY_PRINCIPAL']) || loanBF / 12 : 0;
-        loanIntBF       = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST'] || r['LOAN INT']);
-        monthlyInterest = loanIntBF > 0 ? loanIntBF / 12 : 0;
-        commBF          = parseAmt(r['COMM'] || r['COMMODITY']);
+        // Simple balance format
+        savingsBF        = 0;
+        monthlySavings   = parseAmt(r['SAVINGS']);
+        savingsBank      = 0;
+ 
+        loanBF           = parseAmt(r['LOAN']);
+        monthlyPrincipal = loanBF > 0
+          ? parseAmt(r['MONTHLY PRINCIPAL'] || r['MONTHLY_PRINCIPAL']) || loanBF / 12
+          : 0;
+        loanPrinBank     = 0;
+ 
+        loanIntBF        = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST'] || r['LOAN INT']);
+        monthlyInterest  = loanIntBF > 0 ? loanIntBF / 12 : 0;
+        loanIntBank      = 0;
+ 
+        commBF           = parseAmt(r['COMM'] || r['COMMODITY']);
+        commAdd          = 0; commRepay = 0; commRepayBank = 0;
+        formFee = 0; otherCharges = 0; totalDeduction = 0;
       }
-
+ 
+      // Extract month/year from the MONTH column (e.g. "FEBRUARY, 2026")
+      const monthStr  = (r['MONTH'] || '').toUpperCase();
+      const MONTHS    = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
+                         'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
+      let dataMonth   = MONTHS.findIndex(m => monthStr.includes(m)) + 1; // 1-12
+      let dataYear    = parseInt((monthStr.match(/\d{4}/) || [])[0]) || new Date().getFullYear();
+      if (!dataMonth) { dataMonth = new Date().getMonth() + 1; }
+ 
+      // Previous month = B/F reference (for savings_bf, loan_bal_bf, etc.)
+      let bfMonth = dataMonth - 1;
+      let bfYear  = dataYear;
+      if (bfMonth === 0) { bfMonth = 12; bfYear--; }
+ 
       const client = await db.getClient();
       try {
         await client.query('BEGIN');
-
-        // ── SAVINGS ──────────────────────────────────────────────────────────
-        // Store prior accumulated total as Dec 2025 record (so cumulative total is correct)
-        // Store the recurring monthly contribution as the Jan 2026 record (carries forward)
+ 
+        // ── SAVINGS ────────────────────────────────────────────────────────
+        // Store B/F as previous month record so cumulative total is correct
         if (savingsBF > 0) {
           await client.query(`
             INSERT INTO savings (member_id, amount, month, year, description)
-            VALUES ($1,$2,12,2025,'Balance B/F')
+            VALUES ($1,$2,$3,$4,'Balance B/F')
             ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
-          `, [memberId, savingsBF]);
+          `, [memberId, savingsBF, bfMonth, bfYear]);
         }
-        if (monthlySavings > 0) {
+        // Store the monthly savings contribution for the current month
+        if (monthlySavings > 0 || savingsBank > 0) {
+          const savTotal = monthlySavings + savingsBank;
           await client.query(`
             INSERT INTO savings (member_id, amount, month, year, description)
-            VALUES ($1,$2,1,2026,'Opening Balance')
+            VALUES ($1,$2,$3,$4,'Monthly Savings')
             ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
-          `, [memberId, monthlySavings]);
+          `, [memberId, savTotal, dataMonth, dataYear]);
         }
-
-        // ── LOAN ─────────────────────────────────────────────────────────────
-        // loanBF           = Loan Prin. Bal. B/F  (owed before Jan payment)
-        // monthlyPrincipal = LESS: Loan Principal Repayment (Jan deduction)
-        // loanIntBF        = Loan Interest Balance B/F (interest owed before Jan)
-        // monthlyInterest  = LESS: Loan Interest paid this month (Jan interest paid)
-        //
-        // We store the loan with the B/F principal, then immediately apply the
-        // January repayment so remaining_balance, months_paid and interest_paid
-        // are all correct going into February.
+ 
+        // ── LOAN ──────────────────────────────────────────────────────────
         if (loanBF > 0 && monthlyPrincipal > 0) {
-          await client.query(`DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`, [memberId]);
+          await client.query(
+            `DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`,
+            [memberId]
+          );
           const months = Math.ceil(loanBF / monthlyPrincipal);
-          // Jan principal payment may be less than monthly_principal if it's also the last month
-          const janPrincipal = Math.min(monthlyPrincipal, loanBF);
-          const janInterest  = monthlyInterest;
+          const janPrincipal    = Math.min(monthlyPrincipal, loanBF);
+          const janInterest     = monthlyInterest;
           const balanceAfterJan = loanBF - janPrincipal;
-          const intBalanceAfterJan = Math.max(loanIntBF - janInterest, 0);
-          const loanStatus = balanceAfterJan <= 0 ? 'cleared' : 'active';
-
+          const intBalAfterJan  = Math.max(loanIntBF - janInterest, 0);
+          const loanStatus      = balanceAfterJan <= 0 ? 'cleared' : 'active';
+          const dateIssued      = `${bfYear}-${String(bfMonth).padStart(2,'0')}-01`;
+ 
           const loanRow = await client.query(`
             INSERT INTO loans
               (member_id, principal, months, remaining_balance,
                monthly_principal, total_interest, monthly_interest,
                interest_paid, months_paid, status, date_issued, description)
-            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,'2026-01-01','Opening Balance')
+            VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,'Opening Balance')
             RETURNING id
           `, [
             memberId,
-            loanBF,          // principal = B/F (starting point for our records)
+            loanBF,
             months,
-            balanceAfterJan, // remaining after Jan payment
+            balanceAfterJan,
             monthlyPrincipal,
-            loanIntBF,       // total_interest = interest owed at B/F point
+            loanIntBF,
             monthlyInterest,
-            janInterest,     // interest_paid = Jan interest paid
+            janInterest,
             loanStatus,
+            dateIssued,
           ]);
-
-          // Record the January repayment explicitly
+ 
           if (janPrincipal > 0 || janInterest > 0) {
             await client.query(`
-              INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year)
-              VALUES ($1,$2,$3,$4,1,2026)
-            `, [loanRow.rows[0].id, memberId, janPrincipal, janInterest]);
+              INSERT INTO loan_repayments
+                (loan_id, member_id, principal_paid, interest_paid, month, year)
+              VALUES ($1,$2,$3,$4,$5,$6)
+            `, [loanRow.rows[0].id, memberId, janPrincipal, janInterest, dataMonth, dataYear]);
           }
         }
-
-        // ── COMMODITY ────────────────────────────────────────────────────────
-        // Store commodity balance B/F as Dec 2025 so it shows in the ledger
+ 
+        // ── COMMODITY ─────────────────────────────────────────────────────
         if (commBF > 0) {
           await client.query(
-            `DELETE FROM commodity WHERE member_id=$1 AND month=12 AND year=2025 AND description='Balance B/F'`,
-            [memberId]
+            `DELETE FROM commodity WHERE member_id=$1 AND month=$2 AND year=$3 AND description='Balance B/F'`,
+            [memberId, bfMonth, bfYear]
           );
           await client.query(`
             INSERT INTO commodity (member_id, amount, month, year, description)
-            VALUES ($1,$2,12,2025,'Balance B/F')
-          `, [memberId, commBF]);
+            VALUES ($1,$2,$3,$4,'Balance B/F')
+          `, [memberId, commBF, bfMonth, bfYear]);
         }
-
+ 
+        // ── MONTHLY TRANSACTION RECORD (monthly_trans) ────────────────────
+        // Store all the trans-sheet values so the ledger view shows them correctly
+        const transValues = {
+          savings_bf:          savingsBF,
+          savings_add:         monthlySavings,
+          savings_add_bank:    savingsBank,
+          savings_cf:          parseAmt(r['NET SAVING C/F'] || r['SAVINGS C/F'] || '0'),
+          loan_bal_bf:         loanBF,
+          loan_granted:        parseAmt(r['ADD: LOAN GRANTED '] || r['ADD: LOAN GRANTED'] || r['LOAN GRANTED'] || '0'),
+          loan_repayment:      monthlyPrincipal,
+          loan_repayment_bank: loanPrinBank,
+          loan_ledger_bal:     parseAmt(r['LN LEDGER BAL.'] || r['LOAN LEDGER BAL.'] || '0'),
+          loan_int_bf:         loanIntBF,
+          loan_int_charged:    parseAmt(r[' INT. CHARGE'] || r['INT. CHARGE'] || r['INT CHARGE'] || '0'),
+          loan_int_paid:       monthlyInterest,
+          loan_int_paid_bank:  loanIntBank,
+          loan_int_cf:         parseAmt(r['INT. BAL. C/F'] || r['LOAN INT. BAL. C/F'] || r['INT BAL C/F'] || '0'),
+          comm_bal_bf:         commBF,
+          comm_add:            commAdd,
+          comm_repayment:      commRepay,
+          comm_repayment_bank: commRepayBank,
+          comm_bal_cf:         parseAmt(r['COM.  BAL. C/F'] || r['COM. BAL. C/F'] || r['COMM BAL C/F'] || '0'),
+          form:                formFee,
+          other_charges:       otherCharges,
+          total_deduction:     totalDeduction,
+        };
+ 
+        for (const [column_key, amount] of Object.entries(transValues)) {
+          await client.query(`
+            INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+            VALUES ($1,$2,$3,$4,$5)
+            ON CONFLICT (member_id, column_key, month, year)
+            DO UPDATE SET amount=EXCLUDED.amount, updated_at=NOW()
+          `, [memberId, column_key, amount, dataMonth, dataYear]);
+        }
+ 
         await client.query('COMMIT');
         imported++;
       } catch (e) {
@@ -685,9 +820,13 @@ async function importBalances(req, res) {
         client.release();
       }
     }
-
-    console.log('Balances import successful, sending response:', { imported, skipped, errors });
-    res.json({ ok: true, message: `${imported} members updated, ${skipped} skipped`, imported, skipped, errors });
+ 
+    console.log('Balances import successful:', { imported, skipped, errors });
+    res.json({
+      ok: true,
+      message: `${imported} members updated, ${skipped} skipped`,
+      imported, skipped, errors,
+    });
   } catch (err) {
     console.error('Balances import error:', err);
     res.status(500).json({ error: err.message });
