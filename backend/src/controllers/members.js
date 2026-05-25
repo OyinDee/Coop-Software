@@ -428,51 +428,58 @@ async function deleteMember(req, res) {
 async function importCSV(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
 
-  // Parse a flexible date string into a YYYY-MM-DD string Postgres accepts, or null
   function parseDate(raw) {
     if (!raw) return null;
     const s = raw.trim();
     if (!s) return null;
-
-    // Already ISO or DD/MM/YYYY-ish
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-
-    // "Aug/2016" → 1 Aug 2016
     const mmm_yyyy = s.match(/^([A-Za-z]{3})[\/\-](\d{4})$/);
     if (mmm_yyyy) {
       const d = new Date(`1 ${mmm_yyyy[1]} ${mmm_yyyy[2]}`);
       if (!isNaN(d)) return d.toISOString().split('T')[0];
     }
-
-    // Try generic parse
     const d = new Date(s);
     if (!isNaN(d)) return d.toISOString().split('T')[0];
-
     return null;
   }
 
   try {
-    // Strip BOM if present
-    let csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+    let records = [];
 
-    const records = parse(csvText, {
-      columns: true,
-      skip_empty_lines: true,
-      trim: true,
-      relax_column_count: true,
-    });
+    const isXlsx =
+      req.file.originalname?.toLowerCase().endsWith('.xlsx') ||
+      req.file.originalname?.toLowerCase().endsWith('.xls') ||
+      req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
+      req.file.mimetype === 'application/vnd.ms-excel';
 
-    let imported = 0;
-    let skipped = 0;
+    if (isXlsx) {
+      const XLSX = require('xlsx');
+      const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
+      const sheet = workbook.Sheets[workbook.SheetNames[0]];
+      const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
+      if (rawRows.length < 2) return res.status(400).json({ error: 'Excel file appears to be empty' });
+      const headers = rawRows[0].map(h => String(h).trim());
+      for (let i = 1; i < rawRows.length; i++) {
+        const obj = {};
+        headers.forEach((h, idx) => { obj[h] = String(rawRows[i][idx] ?? '').trim(); });
+        records.push(obj);
+      }
+    } else {
+      const csvText = req.file.buffer.toString('utf-8').replace(/^\uFEFF/, '');
+      records = parse(csvText, {
+        columns: true, skip_empty_lines: true, trim: true, relax_column_count: true,
+      });
+    }
+
+    let imported = 0, skipped = 0;
     const errors = [];
 
     for (const row of records) {
-      // Normalise all keys: trim whitespace so "DEPARTMENT " matches
       const r = {};
       for (const k of Object.keys(row)) r[k.trim()] = row[k];
 
-      const ledger_no = r['LEDGER No'] || r['Ledger No'] || r['ledger_no'];
-      const full_name = r['Name'] || r['FULL NAME'] || r['full_name'];
+      const ledger_no = r['LEDGER No'] || r['Ledger No'] || r['ledger_no'] || r['L/No'] || r['L/NO'];
+      const full_name = r['Name'] || r['FULL NAME'] || r['full_name'] || r['NAME'];
       if (!ledger_no || !full_name) { skipped++; continue; }
 
       const date_of_admission = parseDate(r['Date of Admission'] || r['DATE OF ADMISSION']);
@@ -487,15 +494,15 @@ async function importCSV(req, res) {
           ON CONFLICT (ledger_no) DO NOTHING
         `, [
           ledger_no.trim(),
-          r['Staff No']  || r['STAFF NO']  || null,
-          r['GIFMIS No'] || r['GIFMIS NO'] || null,
+          r['Staff No']  || r['STAFF NO']  || r['STAFF No'] || null,
+          r['GIFMIS No'] || r['GIFMIS NO'] || r['IPPIS No'] || r['IPPIS NO'] || null,
           full_name.trim(),
           r['Gender']   || r['GENDER']    || null,
           r['MARITAL STATUS'] || r['Marital Status'] || null,
-          r['Phone No.'] || r['PHONE'] || r['Phone']  || null,
-          r['FUOYE E-mail Address'] || r['Email'] || r['EMAIL'] || null,
+          r['Phone No.'] || r['PHONE'] || r['Phone'] || r['GSM No'] || r['GSM NO'] || null,
+          r['FUOYE E-mail Address'] || r['Email'] || r['EMAIL'] || r['e-mail'] || r['E-MAIL'] || null,
           date_of_admission,
-          r['BANK']  || r['Bank']  || null,
+          r['BANK'] || r['Bank'] || null,
           r['ACCOUNT NUMBER'] || r['Account Number'] || null,
           r['DEPARTMENT'] || r['Department'] || null,
           r['Next of Kin'] || r['NEXT OF KIN'] || null,
@@ -509,7 +516,6 @@ async function importCSV(req, res) {
       }
     }
 
-    console.log('Members import successful, sending response:', { imported, skipped, errors });
     res.json({ ok: true, message: `${imported} members imported, ${skipped} skipped`, imported, skipped, errors });
   } catch (err) {
     console.error('Members import error:', err);
