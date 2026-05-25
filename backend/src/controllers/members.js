@@ -218,7 +218,7 @@ async function sendSingleMemberMonthlyReport(memberId, month, year, mailer) {
 }
 
 async function getMembers(req, res) {
-  const { search, page = 1, limit = 100 } = req.query;
+  const { search, page = 1, limit = 1000 } = req.query;
   const offset = (page - 1) * limit;
   
   try {
