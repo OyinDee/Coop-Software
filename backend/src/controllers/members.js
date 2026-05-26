@@ -1,5 +1,7 @@
 const db = require('../db');
 const nodemailer = require('nodemailer');
+const fs = require('fs');
+const path = require('path');
 // loans table needs optional description column – add it if it doesn't exist
 // (run once on startup, harmless if already present)
 db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
@@ -63,6 +65,19 @@ async function loadMonthlyValues(memberId, month, year) {
 
 function buildMonthlyReportDocument({ member, month, year, current, previous }) {
   const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
+  // Inline logo if available to avoid duplicate displayed attachments in email clients
+  let logoDataUrl = null;
+  try {
+    const logoPath = process.env.COOP_LOGO_PATH;
+    if (logoPath && fs.existsSync(logoPath)) {
+      const ext = path.extname(logoPath).toLowerCase();
+      const mime = ext === '.png' ? 'image/png' : (ext === '.jpg' || ext === '.jpeg') ? 'image/jpeg' : (ext === '.gif' ? 'image/gif' : 'image/png');
+      const buf = fs.readFileSync(logoPath);
+      logoDataUrl = `data:${mime};base64,${buf.toString('base64')}`;
+    }
+  } catch (e) {
+    logoDataUrl = null;
+  }
 
   const savingsValue = toNumber(current.savings_add) + toNumber(current.savings_add_bank);
   const loanPrincipalValue = toNumber(current.loan_repayment) + toNumber(current.loan_repayment_bank);
@@ -113,58 +128,17 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
           box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
         }
         .header {
-          display: grid;
-          grid-template-columns: 60px 1fr 60px;
-          align-items: center;
-          border-bottom: 1px solid #222;
-          background: #eef1e0;
-        }
-        .seal {
-          width: 54px;
-          height: 54px;
-          margin: 6px;
-          border-radius: 50%;
-          border: 2px solid #7a5a1c;
           display: flex;
           align-items: center;
-          justify-content: center;
-          font-size: 12px;
-          font-weight: 700;
-          color: #7a5a1c;
-          background: #fff;
-          line-height: 1.05;
-          text-align: center;
-        }
-        .header-copy {
-          text-align: center;
-          padding: 8px 6px 6px;
-        }
-        .org {
-          font-size: 14px;
-          font-weight: 700;
-          color: #8b5a11;
-          line-height: 1.2;
-        }
-        .suborg {
-          font-size: 12px;
-          font-weight: 700;
-          color: #8b5a11;
-          margin-top: 2px;
-        }
-        .state {
-          font-size: 12px;
-          font-weight: 700;
-          margin-top: 2px;
-        }
-        .title {
-          margin-top: 4px;
-          padding: 4px 0;
-          font-size: 14px;
-          font-weight: 700;
-          letter-spacing: 0.2px;
-          border-top: 1px solid #222;
+          gap: 12px;
           border-bottom: 1px solid #222;
+          background: #eef1e0;
+          padding: 6px 8px;
         }
+        .logo { width:48px; height:48px; object-fit:contain; }
+        .header-copy { text-align: left; }
+        .org { font-size: 12px; font-weight: 800; color: #8b5a11; }
+        .title { font-size: 11px; font-weight: 700; margin-top: 2px; }
         table {
           width: 100%;
           border-collapse: collapse;
@@ -249,14 +223,11 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
     <body>
       <div class="page">
         <div class="header">
-          <div class="seal">SSANU</div>
+          <div>${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo" class="logo"/>` : ''}</div>
           <div class="header-copy">
-            <div class="org">SSANU (FUOYE) COOPERATIVE MULTIPURPOSE SOCIETY LTD</div>
-            <div class="suborg">SENIOR STAFF ASSOCIATION OF NIGERIA UNIVERSITIES</div>
-            <div class="state">Federal University Oye-Ekiti, Ekiti State</div>
-            <div class="title">TRANSACTION FOR THE MONTH OF ${escapeHtml(subjectPeriod)}</div>
+            <div class="org">SSANUCOOP</div>
+            <div class="title">TRANSACTIONS — ${escapeHtml(subjectPeriod)}</div>
           </div>
-          <div class="seal">SSANU</div>
         </div>
 
         <table class="identity">
@@ -277,46 +248,46 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
         </table>
 
         ${section('SAVINGS:',
-          row('SAVINGS B/F', `&#8358;${formatAmount(previous?.savings_cf || 0)}`) +
-          row('ADD: Savings this month', `&#8358;${formatAmount(current.savings_add)}`) +
-          row('ADD: Savings this month (Bank)', `&#8358;${formatAmount(current.savings_add_bank)}`) +
-          row('LESS: Withdrawal', `&#8358;${formatAmount(current.savings_withdrawal)}`) +
-          row('Net Saving C/F', `&#8358;${formatAmount(current.savings_cf)}`),
+          row('SAVINGS B/F', `${formatAmount(previous?.savings_cf || 0)}`) +
+          row('ADD: Savings this month', `${formatAmount(current.savings_add)}`) +
+          row('ADD: Savings this month (Bank)', `${formatAmount(current.savings_add_bank)}`) +
+          row('LESS: Withdrawal', `${formatAmount(current.savings_withdrawal)}`) +
+          row('Net Saving C/F', `${formatAmount(current.savings_cf)}`),
           'green')}
 
         ${section('LOAN SERVICES:',
-          row('Loan Principal Balance B/F', `&#8358;${formatAmount(previous?.loan_ledger_bal || 0)}`) +
-          row('ADD: Loan Granted this Month', `&#8358;${formatAmount(current.loan_granted)}`) +
-          row('LESS: Loan Principal Repayment', `&#8358;${formatAmount(current.loan_repayment)}`) +
-          row('LESS: Loan Principal Repayment (Bank)', `&#8358;${formatAmount(current.loan_repayment_bank)}`) +
-          row('Loan Ledger Balance C/F', `&#8358;${formatAmount(current.loan_ledger_bal)}`),
+          row('Loan Principal Balance B/F', `${formatAmount(previous?.loan_ledger_bal || 0)}`) +
+          row('ADD: Loan Granted this Month', `${formatAmount(current.loan_granted)}`) +
+          row('LESS: Loan Principal Repayment', `${formatAmount(current.loan_repayment)}`) +
+          row('LESS: Loan Principal Repayment (Bank)', `${formatAmount(current.loan_repayment_bank)}`) +
+          row('Loan Ledger Balance C/F', `${formatAmount(current.loan_ledger_bal)}`),
           'peach')}
 
         ${section('LOAN INTEREST:',
-          row('Loan Interest Balance B/F', `&#8358;${formatAmount(openingLoanInterest)}`) +
-          row('ADD: Ln Interest charged (this month)', `&#8358;${formatAmount(current.loan_int_charged)}`) +
-          row('LESS: Loan Interest paid', `&#8358;${formatAmount(current.loan_int_paid)}`) +
-          row('LESS: Loan Interest Paid (Bank)', `&#8358;${formatAmount(current.loan_int_paid_bank)}`) +
-          row('Loan Interest Balance C/F', `&#8358;${formatAmount(loanInterestCf)}`),
+          row('Loan Interest Balance B/F', `${formatAmount(openingLoanInterest)}`) +
+          row('ADD: Ln Interest charged (this month)', `${formatAmount(current.loan_int_charged)}`) +
+          row('LESS: Loan Interest paid', `${formatAmount(current.loan_int_paid)}`) +
+          row('LESS: Loan Interest Paid (Bank)', `${formatAmount(current.loan_int_paid_bank)}`) +
+          row('Loan Interest Balance C/F', `${formatAmount(loanInterestCf)}`),
           'yellow')}
 
         ${section('COMMODITY/GADGET SALES SERVICES:',
-          row('Commodity Sales Balance B/F', `&#8358;${formatAmount(previous?.comm_bal_cf || 0)}`) +
-          row('ADD: Commodity Sales this Month', `&#8358;${formatAmount(current.comm_add)}`) +
-          row('LESS: Commodity Sales Repayment', `&#8358;${formatAmount(current.comm_repayment)}`) +
-          row('LESS: Commodity Sales Repayment (Bank)', `&#8358;${formatAmount(current.comm_repayment_bank)}`) +
-          row('Commodity Sales Balance C/F', `&#8358;${formatAmount(current.comm_bal_cf)}`),
+          row('Commodity Sales Balance B/F', `${formatAmount(previous?.comm_bal_cf || 0)}`) +
+          row('ADD: Commodity Sales this Month', `${formatAmount(current.comm_add)}`) +
+          row('LESS: Commodity Sales Repayment', `${formatAmount(current.comm_repayment)}`) +
+          row('LESS: Commodity Sales Repayment (Bank)', `${formatAmount(current.comm_repayment_bank)}`) +
+          row('Commodity Sales Balance C/F', `${formatAmount(current.comm_bal_cf)}`),
           'blue')}
 
         ${section('SUMMARY:',
-          row('SAVINGS', `&#8358;${formatAmount(savingsValue)}`) +
-          row('LOAN PRINCIPAL REPAYMENT', `&#8358;${formatAmount(loanPrincipalValue)}`) +
-          row('LOAN INTEREST', `&#8358;${formatAmount(loanInterestValue)}`) +
-          row('COMMODITY/GADGET', `&#8358;${formatAmount(commodityValue)}`) +
-          row('LOAN/MEMBERSHIP FORM', `&#8358;${formatAmount(current.form)}`) +
-          row('OTHER CHARGES', `&#8358;${formatAmount(current.other_charges)}`) +
-          row('TOTAL DEDUCTION THIS MONTH', `&#8358;${formatAmount(current.total_deduction)}`) +
-          row('TOTAL AMOUNT PAID TO BANK', `&#8358;${formatAmount(totalAmountPaidToBank)}`),
+          row('SAVINGS', `${formatAmount(savingsValue)}`) +
+          row('LOAN PRINCIPAL REPAYMENT', `${formatAmount(loanPrincipalValue)}`) +
+          row('LOAN INTEREST', `${formatAmount(loanInterestValue)}`) +
+          row('COMMODITY/GADGET', `${formatAmount(commodityValue)}`) +
+          row('LOAN/MEMBERSHIP FORM', `${formatAmount(current.form)}`) +
+          row('OTHER CHARGES', `${formatAmount(current.other_charges)}`) +
+          row('TOTAL DEDUCTION THIS MONTH', `${formatAmount(current.total_deduction)}`) +
+          row('TOTAL AMOUNT PAID TO BANK', `${formatAmount(totalAmountPaidToBank)}`),
           'summary')}
 
         <table class="comments">
@@ -433,19 +404,21 @@ async function sendSingleMemberMonthlyReport(memberId, month, year, mailer) {
     return { status: 'skipped', reason: 'member has no email' };
   }
 
+  const attachments = [
+    {
+      filename: reportPayload.attachmentName,
+      content: reportPayload.attachmentContent,
+      contentType: 'text/html; charset=utf-8',
+    },
+  ];
+
   await mailer.transporter.sendMail({
     from: mailer.from,
     to: email,
     subject: reportPayload.subject,
     text: reportPayload.text,
     html: reportPayload.html,
-    attachments: [
-      {
-        filename: reportPayload.attachmentName,
-        content: reportPayload.attachmentContent,
-        contentType: 'text/html; charset=utf-8',
-      },
-    ],
+    attachments,
   });
 
   return {
