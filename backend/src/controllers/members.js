@@ -22,6 +22,321 @@ function resolveMonthYear(monthRaw, yearRaw) {
   return { month, year };
 }
 
+function getPreviousMonthYear(month, year) {
+  return month === 1 ? { month: 12, year: year - 1 } : { month: month - 1, year };
+}
+
+function toNumber(value) {
+  const parsed = parseFloat(value);
+  return Number.isFinite(parsed) ? parsed : 0;
+}
+
+function formatAmount(value) {
+  return new Intl.NumberFormat('en-NG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(toNumber(value));
+}
+
+function escapeHtml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+}
+
+async function loadMonthlyValues(memberId, month, year) {
+  const result = await db.query(
+    `SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3`,
+    [memberId, month, year]
+  );
+
+  const values = {};
+  for (const row of result.rows) {
+    values[row.column_key] = toNumber(row.amount);
+  }
+
+  return values;
+}
+
+function buildMonthlyReportDocument({ member, month, year, current, previous }) {
+  const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
+
+  const savingsValue = toNumber(current.savings_add) + toNumber(current.savings_add_bank);
+  const loanPrincipalValue = toNumber(current.loan_repayment) + toNumber(current.loan_repayment_bank);
+  const loanInterestValue = toNumber(current.loan_int_paid) + toNumber(current.loan_int_paid_bank);
+  const commodityValue = toNumber(current.comm_repayment) + toNumber(current.comm_repayment_bank);
+  const totalAmountPaidToBank = toNumber(current.savings_add_bank) + toNumber(current.loan_repayment_bank) + toNumber(current.loan_int_paid_bank) + toNumber(current.comm_repayment_bank);
+  const openingLoanInterest = toNumber(previous?.loan_int_cf || 0);
+  const paidLoanInterest = toNumber(current.loan_int_paid) + toNumber(current.loan_int_paid_bank);
+  const loanInterestCf = Math.max(0, openingLoanInterest + toNumber(current.loan_int_charged) - paidLoanInterest);
+
+  const row = (label, value) => `
+    <tr>
+      <td class="report-label">${escapeHtml(label)}</td>
+      <td class="report-value">${value}</td>
+    </tr>
+  `;
+
+  const section = (title, rows, className) => `
+    <table class="section ${className}">
+      <tbody>
+        <tr><th colspan="2" class="section-title">${escapeHtml(title)}</th></tr>
+        ${rows}
+      </tbody>
+    </table>
+  `;
+
+  return `
+    <!DOCTYPE html>
+    <html lang="en">
+    <head>
+      <meta charset="UTF-8" />
+      <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+      <title>${escapeHtml(subjectPeriod)} Transaction Report</title>
+      <style>
+        body {
+          margin: 0;
+          padding: 24px;
+          background: #efefef;
+          font-family: Arial, Helvetica, sans-serif;
+          color: #111;
+        }
+        .page {
+          width: 760px;
+          max-width: 100%;
+          margin: 0 auto;
+          background: #fff;
+          border: 1px solid #222;
+          box-shadow: 0 10px 30px rgba(0, 0, 0, 0.12);
+        }
+        .header {
+          display: grid;
+          grid-template-columns: 60px 1fr 60px;
+          align-items: center;
+          border-bottom: 1px solid #222;
+          background: #eef1e0;
+        }
+        .seal {
+          width: 54px;
+          height: 54px;
+          margin: 6px;
+          border-radius: 50%;
+          border: 2px solid #7a5a1c;
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          font-size: 12px;
+          font-weight: 700;
+          color: #7a5a1c;
+          background: #fff;
+          line-height: 1.05;
+          text-align: center;
+        }
+        .header-copy {
+          text-align: center;
+          padding: 8px 6px 6px;
+        }
+        .org {
+          font-size: 14px;
+          font-weight: 700;
+          color: #8b5a11;
+          line-height: 1.2;
+        }
+        .suborg {
+          font-size: 12px;
+          font-weight: 700;
+          color: #8b5a11;
+          margin-top: 2px;
+        }
+        .state {
+          font-size: 12px;
+          font-weight: 700;
+          margin-top: 2px;
+        }
+        .title {
+          margin-top: 4px;
+          padding: 4px 0;
+          font-size: 14px;
+          font-weight: 700;
+          letter-spacing: 0.2px;
+          border-top: 1px solid #222;
+          border-bottom: 1px solid #222;
+        }
+        table {
+          width: 100%;
+          border-collapse: collapse;
+        }
+        .identity td {
+          border: 1px solid #222;
+          padding: 4px 8px;
+          font-size: 13px;
+        }
+        .identity .label {
+          width: 18%;
+          background: #f6d7bd;
+          font-weight: 700;
+          white-space: nowrap;
+        }
+        .identity .value {
+          width: 32%;
+          background: #fff;
+        }
+        .identity .label.wide {
+          width: 20%;
+        }
+        .section {
+          border-left: 1px solid #222;
+          border-right: 1px solid #222;
+          border-bottom: 1px solid #222;
+        }
+        .section-title {
+          border-top: 1px solid #222;
+          border-bottom: 1px solid #222;
+          background: #fff;
+          text-align: center;
+          font-size: 16px;
+          font-weight: 800;
+          padding: 2px 0;
+        }
+        .section td {
+          border: 1px solid #222;
+          font-size: 12px;
+          line-height: 1.1;
+          padding: 3px 6px;
+        }
+        .report-label {
+          width: 70%;
+          font-size: 12px;
+        }
+        .report-value {
+          width: 30%;
+          text-align: right;
+          font-weight: 700;
+        }
+        .green .report-label, .green .section-title { background: #dfead3; }
+        .green .report-value { background: #eaf4db; }
+        .peach .report-label, .peach .section-title { background: #f6e0d1; }
+        .peach .report-value { background: #f9eadf; }
+        .yellow .report-label, .yellow .section-title { background: #f7ebbe; }
+        .yellow .report-value { background: #fcf1cd; }
+        .blue .report-label, .blue .section-title { background: #d4dced; }
+        .blue .report-value { background: #dde6f7; }
+        .summary .report-label, .summary .section-title { background: #ececec; }
+        .summary .report-value { background: #f5f5f5; }
+        .comments td {
+          border: 1px solid #222;
+          padding: 5px 6px;
+          font-size: 12px;
+          min-height: 26px;
+        }
+        .comments .label {
+          width: 18%;
+          background: #fff;
+          font-weight: 700;
+        }
+        .footer {
+          text-align: center;
+          font-size: 12px;
+          font-style: italic;
+          font-weight: 700;
+          padding: 8px 0 10px;
+        }
+      </style>
+    </head>
+    <body>
+      <div class="page">
+        <div class="header">
+          <div class="seal">SSANU</div>
+          <div class="header-copy">
+            <div class="org">SSANU (FUOYE) COOPERATIVE MULTIPURPOSE SOCIETY LTD</div>
+            <div class="suborg">SENIOR STAFF ASSOCIATION OF NIGERIA UNIVERSITIES</div>
+            <div class="state">Federal University Oye-Ekiti, Ekiti State</div>
+            <div class="title">TRANSACTION FOR THE MONTH OF ${escapeHtml(subjectPeriod)}</div>
+          </div>
+          <div class="seal">SSANU</div>
+        </div>
+
+        <table class="identity">
+          <tr>
+            <td class="label">NAME:</td>
+            <td class="value" colspan="3">${escapeHtml(member.full_name || '')}</td>
+          </tr>
+          <tr>
+            <td class="label">E-MAIL:</td>
+            <td class="value" colspan="3">${escapeHtml(member.email || '')}</td>
+          </tr>
+          <tr>
+            <td class="label">STAFF No</td>
+            <td class="value">${escapeHtml(member.staff_no || '')}</td>
+            <td class="label wide">GSM No:</td>
+            <td class="value">${escapeHtml(member.phone || '')}</td>
+          </tr>
+        </table>
+
+        ${section('SAVINGS:',
+          row('SAVINGS B/F', `&#8358;${formatAmount(previous?.savings_cf || 0)}`) +
+          row('ADD: Savings this month', `&#8358;${formatAmount(current.savings_add)}`) +
+          row('ADD: Savings this month (Bank)', `&#8358;${formatAmount(current.savings_add_bank)}`) +
+          row('LESS: Withdrawal', `&#8358;${formatAmount(current.savings_withdrawal)}`) +
+          row('Net Saving C/F', `&#8358;${formatAmount(current.savings_cf)}`),
+          'green')}
+
+        ${section('LOAN SERVICES:',
+          row('Loan Principal Balance B/F', `&#8358;${formatAmount(previous?.loan_ledger_bal || 0)}`) +
+          row('ADD: Loan Granted this Month', `&#8358;${formatAmount(current.loan_granted)}`) +
+          row('LESS: Loan Principal Repayment', `&#8358;${formatAmount(current.loan_repayment)}`) +
+          row('LESS: Loan Principal Repayment (Bank)', `&#8358;${formatAmount(current.loan_repayment_bank)}`) +
+          row('Loan Ledger Balance C/F', `&#8358;${formatAmount(current.loan_ledger_bal)}`),
+          'peach')}
+
+        ${section('LOAN INTEREST:',
+          row('Loan Interest Balance B/F', `&#8358;${formatAmount(openingLoanInterest)}`) +
+          row('ADD: Ln Interest charged (this month)', `&#8358;${formatAmount(current.loan_int_charged)}`) +
+          row('LESS: Loan Interest paid', `&#8358;${formatAmount(current.loan_int_paid)}`) +
+          row('LESS: Loan Interest Paid (Bank)', `&#8358;${formatAmount(current.loan_int_paid_bank)}`) +
+          row('Loan Interest Balance C/F', `&#8358;${formatAmount(loanInterestCf)}`),
+          'yellow')}
+
+        ${section('COMMODITY/GADGET SALES SERVICES:',
+          row('Commodity Sales Balance B/F', `&#8358;${formatAmount(previous?.comm_bal_cf || 0)}`) +
+          row('ADD: Commodity Sales this Month', `&#8358;${formatAmount(current.comm_add)}`) +
+          row('LESS: Commodity Sales Repayment', `&#8358;${formatAmount(current.comm_repayment)}`) +
+          row('LESS: Commodity Sales Repayment (Bank)', `&#8358;${formatAmount(current.comm_repayment_bank)}`) +
+          row('Commodity Sales Balance C/F', `&#8358;${formatAmount(current.comm_bal_cf)}`),
+          'blue')}
+
+        ${section('SUMMARY:',
+          row('SAVINGS', `&#8358;${formatAmount(savingsValue)}`) +
+          row('LOAN PRINCIPAL REPAYMENT', `&#8358;${formatAmount(loanPrincipalValue)}`) +
+          row('LOAN INTEREST', `&#8358;${formatAmount(loanInterestValue)}`) +
+          row('COMMODITY/GADGET', `&#8358;${formatAmount(commodityValue)}`) +
+          row('LOAN/MEMBERSHIP FORM', `&#8358;${formatAmount(current.form)}`) +
+          row('OTHER CHARGES', `&#8358;${formatAmount(current.other_charges)}`) +
+          row('TOTAL DEDUCTION THIS MONTH', `&#8358;${formatAmount(current.total_deduction)}`) +
+          row('TOTAL AMOUNT PAID TO BANK', `&#8358;${formatAmount(totalAmountPaidToBank)}`),
+          'summary')}
+
+        <table class="comments">
+          <tr>
+            <td class="label">COMMENTS:</td>
+            <td>&nbsp;</td>
+          </tr>
+          <tr>
+            <td style="width:55%; height:24px;"></td>
+            <td></td>
+          </tr>
+        </table>
+
+        <div class="footer">&copy; SSANUCOOP 2026</div>
+      </div>
+    </body>
+    </html>
+  `;
+}
+
 function getMailer() {
   const user = process.env.SMTP_USER;
   const pass = process.env.SMTP_PASS;
@@ -40,7 +355,7 @@ function getMailer() {
 
 async function getMonthlyReport(memberId, month, year) {
   const memberRes = await db.query(
-    `SELECT id, full_name, ledger_no, staff_no, email FROM members WHERE id=$1`,
+    `SELECT id, full_name, ledger_no, staff_no, email, phone FROM members WHERE id=$1`,
     [memberId]
   );
   const member = memberRes.rows[0];
@@ -48,124 +363,53 @@ async function getMonthlyReport(memberId, month, year) {
     return null;
   }
 
-  const transRes = await db.query(
-    `SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3`,
-    [memberId, month, year]
-  );
-  const sharesRes = await db.query(
-    `SELECT COALESCE(SUM(amount), 0) AS total FROM shares WHERE member_id=$1 AND month=$2 AND year=$3`,
-    [memberId, month, year]
-  );
+  const previous = getPreviousMonthYear(month, year);
+  const [currentValues, previousValues] = await Promise.all([
+    loadMonthlyValues(memberId, month, year),
+    loadMonthlyValues(memberId, previous.month, previous.year),
+  ]);
 
-  const values = {};
-  for (const row of transRes.rows) {
-    values[row.column_key] = parseFloat(row.amount) || 0;
-  }
-
-  const shares = parseFloat(sharesRes.rows[0]?.total) || 0;
   const report = {
-    savings_withdrawal: values.savings_withdrawal || 0,
-    savings_add: values.savings_add || 0,
-    savings_add_bank: values.savings_add_bank || 0,
-    shares,
-    loan_granted: values.loan_granted || 0,
-    loan_int_charged: values.loan_int_charged || 0,
-    loan_repayment: values.loan_repayment || 0,
-    loan_repayment_bank: values.loan_repayment_bank || 0,
-    loan_int_paid: values.loan_int_paid || 0,
-    comm_add: values.comm_add || 0,
-    comm_repayment: values.comm_repayment || 0,
-    comm_repayment_bank: values.comm_repayment_bank || 0,
-    form: values.form || 0,
-    other_charges: values.other_charges || 0,
-    total_deduction: values.total_deduction || 0,
-    savings_cf: values.savings_cf || 0,
-    loan_ledger_bal: values.loan_ledger_bal || 0,
-    loan_int_cf: values.loan_int_cf || 0,
-    comm_bal_cf: values.comm_bal_cf || 0,
+    savings_withdrawal: currentValues.savings_withdrawal || 0,
+    savings_add: currentValues.savings_add || 0,
+    savings_add_bank: currentValues.savings_add_bank || 0,
+    loan_granted: currentValues.loan_granted || 0,
+    loan_int_charged: currentValues.loan_int_charged || 0,
+    loan_repayment: currentValues.loan_repayment || 0,
+    loan_repayment_bank: currentValues.loan_repayment_bank || 0,
+    loan_int_paid: currentValues.loan_int_paid || 0,
+    loan_int_paid_bank: currentValues.loan_int_paid_bank || 0,
+    comm_add: currentValues.comm_add || 0,
+    comm_repayment: currentValues.comm_repayment || 0,
+    comm_repayment_bank: currentValues.comm_repayment_bank || 0,
+    form: currentValues.form || 0,
+    other_charges: currentValues.other_charges || 0,
+    total_deduction: currentValues.total_deduction || 0,
+    savings_cf: currentValues.savings_cf || 0,
+    loan_ledger_bal: currentValues.loan_ledger_bal || 0,
+    loan_int_cf: Math.max(0, toNumber(previousValues.loan_int_cf || 0) + toNumber(currentValues.loan_int_charged || 0) - toNumber(currentValues.loan_int_paid || 0) - toNumber(currentValues.loan_int_paid_bank || 0)),
+    comm_bal_cf: currentValues.comm_bal_cf || 0,
   };
 
   const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
-  const subject = `Monthly Cooperative Report - ${subjectPeriod}`;
-
-  const csvHeaders = [
-    'MONTH',
-    'MEMBER_NAME',
-    'LEDGER_NO',
-    'STAFF_NO',
-    'SAVINGS_WITHDRAWAL',
-    'SAVINGS_ADD',
-    'SAVINGS_ADD_BANK',
-    'SHARES',
-    'LOAN_GRANTED',
-    'LOAN_INTEREST_CHARGED',
-    'LOAN_REPAYMENT',
-    'LOAN_REPAYMENT_BANK',
-    'LOAN_INTEREST_PAID',
-    'COMMODITY_ADD',
-    'COMMODITY_REPAYMENT',
-    'COMMODITY_REPAYMENT_BANK',
-    'FORM',
-    'OTHER_CHARGES',
-    'TOTAL_DEDUCTION',
-    'SAVINGS_BALANCE_CF',
-    'LOAN_BALANCE_CF',
-    'LOAN_INTEREST_BALANCE_CF',
-    'COMMODITY_BALANCE_CF'
-  ];
-
-  const csvData = [
-    subjectPeriod,
-    member.full_name || '',
-    member.ledger_no || '',
-    member.staff_no || '',
-    report.savings_withdrawal,
-    report.savings_add,
-    report.savings_add_bank,
-    report.shares,
-    report.loan_granted,
-    report.loan_int_charged,
-    report.loan_repayment,
-    report.loan_repayment_bank,
-    report.loan_int_paid,
-    report.comm_add,
-    report.comm_repayment,
-    report.comm_repayment_bank,
-    report.form,
-    report.other_charges,
-    report.total_deduction,
-    report.savings_cf,
-    report.loan_ledger_bal,
-    report.loan_int_cf,
-    report.comm_bal_cf,
-  ];
-
-  const csvContent = `${csvHeaders.join(',')}\n${csvData.join(',')}`;
-
-  const html = `
-    <div style="font-family: Arial, sans-serif; line-height: 1.5; color: #111;">
-      <h2 style="margin: 0 0 12px;">Monthly Cooperative Report</h2>
-      <p style="margin: 0 0 10px;">Dear ${member.full_name || 'Member'},</p>
-      <p style="margin: 0 0 16px;">Your report for <strong>${subjectPeriod}</strong> is attached as CSV.</p>
-      <table style="border-collapse: collapse; width: 100%; max-width: 640px;">
-        <tr><td style="border: 1px solid #ddd; padding: 8px;">Savings Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.savings_cf.toFixed(2)}</td></tr>
-        <tr><td style="border: 1px solid #ddd; padding: 8px;">Loan Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.loan_ledger_bal.toFixed(2)}</td></tr>
-        <tr><td style="border: 1px solid #ddd; padding: 8px;">Interest Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.loan_int_cf.toFixed(2)}</td></tr>
-        <tr><td style="border: 1px solid #ddd; padding: 8px;">Commodity Balance C/F</td><td style="border: 1px solid #ddd; padding: 8px;">${report.comm_bal_cf.toFixed(2)}</td></tr>
-        <tr><td style="border: 1px solid #ddd; padding: 8px;">Total Deduction</td><td style="border: 1px solid #ddd; padding: 8px;">${report.total_deduction.toFixed(2)}</td></tr>
-      </table>
-    </div>
-  `;
+  const subject = `Transaction for the Month of ${subjectPeriod}`;
+  const html = buildMonthlyReportDocument({
+    member,
+    month,
+    year,
+    current: report,
+    previous: previousValues,
+  });
 
   const text = [
-    `Monthly Cooperative Report - ${subjectPeriod}`,
+    `Transaction for the Month of ${subjectPeriod}`,
     `Member: ${member.full_name || ''}`,
     `Ledger: ${member.ledger_no || ''}`,
-    `Savings Balance C/F: ${report.savings_cf.toFixed(2)}`,
-    `Loan Balance C/F: ${report.loan_ledger_bal.toFixed(2)}`,
-    `Interest Balance C/F: ${report.loan_int_cf.toFixed(2)}`,
-    `Commodity Balance C/F: ${report.comm_bal_cf.toFixed(2)}`,
-    `Total Deduction: ${report.total_deduction.toFixed(2)}`,
+    `Savings Balance C/F: ${formatAmount(report.savings_cf)}`,
+    `Loan Balance C/F: ${formatAmount(report.loan_ledger_bal)}`,
+    `Interest Balance C/F: ${formatAmount(report.loan_int_cf)}`,
+    `Commodity Balance C/F: ${formatAmount(report.comm_bal_cf)}`,
+    `Total Deduction: ${formatAmount(report.total_deduction)}`,
   ].join('\n');
 
   return {
@@ -173,8 +417,8 @@ async function getMonthlyReport(memberId, month, year) {
     subject,
     text,
     html,
-    attachmentName: `${member.ledger_no || member.id}-monthly-report-${year}-${String(month).padStart(2, '0')}.csv`,
-    attachmentContent: csvContent,
+    attachmentName: `${member.ledger_no || member.id}-monthly-report-${year}-${String(month).padStart(2, '0')}.html`,
+    attachmentContent: html,
   };
 }
 
@@ -199,6 +443,7 @@ async function sendSingleMemberMonthlyReport(memberId, month, year, mailer) {
       {
         filename: reportPayload.attachmentName,
         content: reportPayload.attachmentContent,
+        contentType: 'text/html; charset=utf-8',
       },
     ],
   });
