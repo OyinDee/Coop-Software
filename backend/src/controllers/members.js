@@ -135,7 +135,9 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
           background: #eef1e0;
           padding: 6px 8px;
         }
-        .logo { width:48px; height:48px; object-fit:contain; }
+        .logo-wrap { width:48px; height:48px; display:flex; align-items:center; justify-content:center; }
+        .logo { width:100%; height:100%; object-fit:contain; }
+        .logo-placeholder { width:100%; height:100%; background:transparent; }
         .header-copy { text-align: left; }
         .org { font-size: 12px; font-weight: 800; color: #8b5a11; }
         .title { font-size: 11px; font-weight: 700; margin-top: 2px; }
@@ -223,7 +225,7 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
     <body>
       <div class="page">
         <div class="header">
-          <div>${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo" class="logo"/>` : ''}</div>
+          <div class="logo-wrap">${logoDataUrl ? `<img src="${logoDataUrl}" alt="logo" class="logo"/>` : `<div class="logo-placeholder"></div>`}</div>
           <div class="header-copy">
             <div class="org">SSANUCOOP</div>
             <div class="title">TRANSACTIONS — ${escapeHtml(subjectPeriod)}</div>
