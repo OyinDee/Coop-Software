@@ -13,6 +13,7 @@ const settingsRoutes   = require('./routes/settings');
 const balancesRoutes   = require('./routes/balances');
 const deductionsRoutes = require('./routes/deductions');
 const adminRoutes      = require('./routes/admin');
+const migrate = require('./db/migrate');
 
 const app = express();
 
@@ -25,6 +26,17 @@ app.use(cors({
 app.options('*', cors());
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+const schemaReady = migrate();
+
+app.use(async (req, res, next) => {
+  try {
+    await schemaReady;
+    next();
+  } catch (err) {
+    next(err);
+  }
+});
 
 app.use('/api/auth', authRoutes);
 app.use('/api/members', memberRoutes);
@@ -48,7 +60,12 @@ app.use((err, req, res, next) => {
 // Local dev: start server. On Vercel, the app is exported as a serverless function.
 if (process.env.VERCEL !== '1') {
   const PORT = process.env.PORT || 5000;
-  app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`));
+  schemaReady
+    .then(() => app.listen(PORT, () => console.log(`Server running on http://localhost:${PORT}`)))
+    .catch((err) => {
+      console.error('Failed to initialize schema', err);
+      process.exit(1);
+    });
 }
 
 module.exports = app;

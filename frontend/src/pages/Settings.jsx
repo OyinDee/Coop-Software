@@ -1,10 +1,13 @@
 import { useEffect, useState } from 'react';
 import Layout from '../components/Layout';
 import api from '../api';
+import { useAuth } from '../context/AuthContext';
 import { useToast } from '../context/ToastContext';
 
 export default function Settings() {
   const toast = useToast();
+  const { admin } = useAuth();
+  const isSuperadmin = admin?.role === 'superadmin';
 
   // ── Loan interest rate ───────────────────────────────────────────────────
   const [rate, setRate]       = useState('');
@@ -26,6 +29,16 @@ export default function Settings() {
   const [transColsLoading,  setTransColsLoading]  = useState(true);
   const [togglingTransKey,  setTogglingTransKey]  = useState(null);
 
+  const [admins, setAdmins] = useState([]);
+  const [adminsLoading, setAdminsLoading] = useState(false);
+  const [creatingAdmin, setCreatingAdmin] = useState(false);
+  const [deletingAdminId, setDeletingAdminId] = useState(null);
+  const [deletingMembers, setDeletingMembers] = useState(false);
+  const [newAdminUsername, setNewAdminUsername] = useState('');
+  const [newAdminPassword, setNewAdminPassword] = useState('');
+  const [newAdminFullName, setNewAdminFullName] = useState('');
+  const [newAdminRole, setNewAdminRole] = useState('admin');
+
   useEffect(() => {
     api.get('/settings').then((r) => {
       setRate(r.data.settings.loan_interest_rate ?? '5');
@@ -39,6 +52,14 @@ export default function Settings() {
     api.get('/deductions/columns').then((r) => {
       setTransColumns(r.data.columns);
     }).finally(() => setTransColsLoading(false));
+
+    if (isSuperadmin) {
+      setAdminsLoading(true);
+      api.get('/admin/admins')
+        .then((r) => setAdmins(r.data.admins || []))
+        .catch((err) => toast(err.response?.data?.error || 'Error loading admins', 'error'))
+        .finally(() => setAdminsLoading(false));
+    }
   }, []);
 
   // ── Save loan interest rate ──────────────────────────────────────────────
@@ -114,6 +135,61 @@ export default function Settings() {
       toast(err.response?.data?.error || 'Error updating column', 'error');
     } finally {
       setTogglingTransKey(null);
+    }
+  };
+
+  const refreshAdmins = async () => {
+    const r = await api.get('/admin/admins');
+    setAdmins(r.data.admins || []);
+  };
+
+  const handleCreateAdmin = async (e) => {
+    e.preventDefault();
+    setCreatingAdmin(true);
+    try {
+      await api.post('/admin/admins', {
+        username: newAdminUsername.trim(),
+        password: newAdminPassword,
+        full_name: newAdminFullName.trim() || null,
+        role: newAdminRole,
+      });
+      await refreshAdmins();
+      setNewAdminUsername('');
+      setNewAdminPassword('');
+      setNewAdminFullName('');
+      setNewAdminRole('admin');
+      toast('Admin created');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error creating admin', 'error');
+    } finally {
+      setCreatingAdmin(false);
+    }
+  };
+
+  const handleDeleteAdmin = async (adminRow) => {
+    if (!window.confirm(`Delete admin "${adminRow.username}"?`)) return;
+    setDeletingAdminId(adminRow.id);
+    try {
+      await api.delete(`/admin/admins/${adminRow.id}`);
+      await refreshAdmins();
+      toast('Admin deleted');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error deleting admin', 'error');
+    } finally {
+      setDeletingAdminId(null);
+    }
+  };
+
+  const handleDeleteAllMembers = async () => {
+    if (!window.confirm('Delete all members? This will also remove linked records through database cascades.')) return;
+    setDeletingMembers(true);
+    try {
+      const r = await api.delete('/admin/members');
+      toast(`${r.data.deleted || 0} members deleted`);
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error deleting members', 'error');
+    } finally {
+      setDeletingMembers(false);
     }
   };
 
@@ -385,6 +461,84 @@ export default function Settings() {
           </div>
         )}
       </div>
+
+      {isSuperadmin && (
+        <div className="card" style={{ maxWidth: 760, marginTop: 28 }}>
+          <div className="card-title">Superadmin Controls</div>
+          <div className="info-box" style={{ marginBottom: 20 }}>
+            Create and remove admin accounts, or clear every member and all cascading records from the database.
+          </div>
+
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr) minmax(0, 1fr)', gap: 20, alignItems: 'start' }}>
+            <form onSubmit={handleCreateAdmin} style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+              <div className="card-title" style={{ marginBottom: 12 }}>Create Admin</div>
+              <div className="form-group">
+                <label className="form-label">Username</label>
+                <input className="form-input" value={newAdminUsername} onChange={(e) => setNewAdminUsername(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Full Name</label>
+                <input className="form-input" value={newAdminFullName} onChange={(e) => setNewAdminFullName(e.target.value)} />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Password</label>
+                <input className="form-input" type="password" value={newAdminPassword} onChange={(e) => setNewAdminPassword(e.target.value)} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Role</label>
+                <select className="form-input" value={newAdminRole} onChange={(e) => setNewAdminRole(e.target.value)}>
+                  <option value="admin">Admin</option>
+                  <option value="superadmin">Superadmin</option>
+                </select>
+              </div>
+              <button className="btn btn-primary" type="submit" disabled={creatingAdmin}>
+                {creatingAdmin ? 'Creating…' : 'Create Admin'}
+              </button>
+            </form>
+
+            <div style={{ border: '1px solid var(--border)', borderRadius: 8, padding: 16 }}>
+              <div className="card-title" style={{ marginBottom: 12 }}>Admin Accounts</div>
+              {adminsLoading ? (
+                <div style={{ color: 'var(--muted)', padding: '12px 0' }}>Loading admins…</div>
+              ) : admins.length === 0 ? (
+                <div className="info-box">No admins found.</div>
+              ) : (
+                <div style={{ display: 'grid', gap: 10 }}>
+                  {admins.map((adminRow) => (
+                    <div key={adminRow.id} style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, border: '1px solid var(--border)', borderRadius: 6, padding: '10px 12px' }}>
+                      <div>
+                        <div style={{ fontWeight: 600 }}>{adminRow.username}</div>
+                        <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                          {adminRow.full_name || 'No name'} · {adminRow.role || 'admin'}
+                        </div>
+                      </div>
+                      <button
+                        type="button"
+                        className="btn btn-secondary"
+                        style={{ color: 'var(--danger, #e74c3c)' }}
+                        disabled={deletingAdminId === adminRow.id || adminRow.username === admin?.username}
+                        onClick={() => handleDeleteAdmin(adminRow)}
+                      >
+                        {deletingAdminId === adminRow.id ? 'Deleting…' : 'Delete'}
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          </div>
+
+          <div style={{ marginTop: 20, borderTop: '1px solid var(--border)', paddingTop: 18 }}>
+            <div className="card-title" style={{ marginBottom: 8 }}>Danger Zone</div>
+            <div className="info-box" style={{ marginBottom: 12 }}>
+              Permanently delete every member and all dependent records.
+            </div>
+            <button className="btn btn-secondary" type="button" onClick={handleDeleteAllMembers} disabled={deletingMembers} style={{ color: 'var(--danger, #e74c3c)' }}>
+              {deletingMembers ? 'Deleting…' : 'Delete All Members'}
+            </button>
+          </div>
+        </div>
+      )}
     </Layout>
   );
 }

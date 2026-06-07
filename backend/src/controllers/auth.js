@@ -8,7 +8,7 @@ async function login(req, res) {
     return res.status(400).json({ error: 'Username and password required' });
   }
   try {
-    const result = await db.query('SELECT * FROM admins WHERE username = $1', [username]);
+    const result = await db.query('SELECT id, username, password_hash, full_name, role FROM admins WHERE username = $1', [username]);
     const admin = result.rows[0];
     if (!admin) return res.status(401).json({ error: 'Invalid credentials' });
 
@@ -16,12 +16,12 @@ async function login(req, res) {
     if (!valid) return res.status(401).json({ error: 'Invalid credentials' });
 
     const token = jwt.sign(
-      { id: admin.id, username: admin.username, fullName: admin.full_name },
+      { id: admin.id, username: admin.username, fullName: admin.full_name, role: admin.role || 'admin' },
       process.env.JWT_SECRET,
       { expiresIn: process.env.JWT_EXPIRES_IN || '24h' }
     );
 
-    res.json({ token, admin: { id: admin.id, username: admin.username, fullName: admin.full_name } });
+    res.json({ token, admin: { id: admin.id, username: admin.username, fullName: admin.full_name, role: admin.role || 'admin' } });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }

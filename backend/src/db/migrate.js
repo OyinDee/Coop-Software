@@ -1,4 +1,5 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
+const bcrypt = require('bcryptjs');
 const db = require('./index');
 
 async function migrate() {
@@ -13,9 +14,33 @@ async function migrate() {
         username VARCHAR(100) UNIQUE NOT NULL,
         password_hash VARCHAR(255) NOT NULL,
         full_name VARCHAR(200),
+        role VARCHAR(20) NOT NULL DEFAULT 'admin',
         created_at TIMESTAMPTZ DEFAULT NOW()
       );
     `);
+
+    await client.query(`
+      ALTER TABLE admins ADD COLUMN IF NOT EXISTS role VARCHAR(20) NOT NULL DEFAULT 'admin';
+    `);
+
+    await client.query(`
+      UPDATE admins SET role = 'admin'
+      WHERE role IS NULL OR role = '';
+    `);
+
+    const adminPasswordHash = await bcrypt.hash('admin123', 10);
+
+    await client.query(`
+      INSERT INTO admins (username, password_hash, full_name, role)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (username) DO NOTHING;
+    `, ['superadmin', adminPasswordHash, 'Super Admin', 'superadmin']);
+
+    await client.query(`
+      INSERT INTO admins (username, password_hash, full_name, role)
+      VALUES ($1, $2, $3, $4)
+      ON CONFLICT (username) DO NOTHING;
+    `, ['admin', adminPasswordHash, 'Administrator', 'admin']);
 
     // Members table
     await client.query(`
@@ -322,8 +347,14 @@ async function migrate() {
     throw err;
   } finally {
     client.release();
-    process.exit(0);
   }
 }
 
-migrate().catch(console.error);
+if (require.main === module) {
+  migrate().then(() => process.exit(0)).catch((err) => {
+    console.error(err);
+    process.exit(1);
+  });
+}
+
+module.exports = migrate;

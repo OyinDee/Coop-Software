@@ -89,7 +89,7 @@ export default function Login() {
           </button>
 
           <div style={{ marginTop: 14, fontSize: 10, color: 'var(--faint)', textAlign: 'center', fontFamily: 'var(--mono)', letterSpacing: .5 }}>
-            Demo: admin / admin123
+            Demo: superadmin / admin123
           </div>
         </form>
       </div>

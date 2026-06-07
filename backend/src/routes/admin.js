@@ -1,6 +1,22 @@
 const express = require('express');
 const db = require('../db');
+const authenticate = require('../middleware/auth');
+const {
+  listAdmins,
+  createAdmin,
+  updateAdmin,
+  deleteAdmin,
+  deleteAllMembers,
+} = require('../controllers/admins');
 const router = express.Router();
+
+router.use(authenticate);
+
+router.get('/admins', listAdmins);
+router.post('/admins', createAdmin);
+router.put('/admins/:id', updateAdmin);
+router.delete('/admins/:id', deleteAdmin);
+router.delete('/members', deleteAllMembers);
 
 // Fix commodity negative values
 router.post('/fix-commodity', async (req, res) => {
