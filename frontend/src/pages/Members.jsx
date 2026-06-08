@@ -122,10 +122,13 @@ export default function Members() {
     setImportResult(null);
     const fd = new FormData(); fd.append('file', file);
     try {
-      const r = await api.post('/members/import/csv', fd);
+      const r = await api.post('/members/import/csv', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setImportResult({ ok: true, ...r.data });
       load();
     } catch (err) {
+      console.error('Import error:', err.response?.data || err);
       setImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
     } finally {
       setImporting(false);
@@ -138,10 +141,13 @@ export default function Members() {
     setBalImportResult(null);
     const fd = new FormData(); fd.append('file', file);
     try {
-      const r = await api.post('/members/import/balances', fd);
+      const r = await api.post('/members/import/balances', fd, {
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
       setBalImportResult({ ok: true, ...r.data });
       load();
     } catch (err) {
+      console.error('Balance import error:', err.response?.data || err);
       setBalImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
     } finally {
       setBalImporting(false);
