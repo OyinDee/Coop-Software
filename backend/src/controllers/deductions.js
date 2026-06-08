@@ -2,7 +2,12 @@ const db = require('../db');
 const { parse } = require('csv-parse/sync');
 
 // Headers that identify the member — not stored as financial data
-const IDENTITY_HEADERS = new Set(['s/n', 'month', 'l/no', 'ippis no', 'name', 'staff no']);
+const IDENTITY_HEADERS = new Set([
+  's/n', 'month', 'l/no', 'ippis no', 'name', 'staff no',
+  'gender', 'marital status', 'phone', 'phone no', 'gsm no', 'gsm',
+  'email', 'e-mail', 'bank', 'account', 'account number', 'acct',
+  'department', 'next of kin', 'kin', 'relation', 'date of admission'
+]);
 
 function normalizeLabel(h) {
   return h.toLowerCase()
@@ -275,6 +280,7 @@ async function uploadTransCSV(req, res) {
   const y = parseInt(year);
   
   console.log(`CSV Upload - Processing for month: ${m}, year: ${y}`);
+  console.log(`File: ${req.file?.originalname}, Size: ${req.file?.size} bytes`);
 
   if (!m || !y || !req.file) {
     return res.status(400).json({ error: 'file, month, and year are required' });
@@ -293,6 +299,7 @@ async function uploadTransCSV(req, res) {
     }
 
     const headerRow = records[0].map((h) => (h || '').trim());
+    console.log('CSV Headers detected:', headerRow);
     const existingCols = await db.query('SELECT key, label FROM trans_columns');
     const labelToKey = {};
     for (const row of existingCols.rows) {
@@ -305,10 +312,51 @@ async function uploadTransCSV(req, res) {
     const ippisIdx   = headerRow.findIndex((h) => normalizeLabel(h) === 'ippis no');
     const snIdx      = headerRow.findIndex((h) => normalizeLabel(h) === 's/n');
     const nameIdx    = headerRow.findIndex((h) => normalizeLabel(h) === 'name');
+    
+    // Member profile fields - with flexible header matching
+    const genderIdx = headerRow.findIndex((h) => normalizeLabel(h) === 'gender');
+    const maritalIdx = headerRow.findIndex((h) => normalizeLabel(h) === 'marital status');
+    const phoneIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return n === 'phone' || n === 'phone no' || n === 'gsm no' || n === 'gsm' || n.includes('phone') || n.includes('gsm');
+    });
+    const emailIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return n === 'email' || n === 'e-mail' || n.includes('email') || n.includes('fuoye');
+    });
+    const bankIdx = headerRow.findIndex((h) => normalizeLabel(h) === 'bank');
+    const accountIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return n.includes('account') || n.includes('acct') || n === 'account no' || n === 'acct no' || n === 'acct. no';
+    });
+    const deptIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return n === 'department' || n === 'dept';
+    });
+    const nextOfKinIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return (n === 'next of kin' || n === 'next of kin name' || 
+              (n.includes('next') && n.includes('kin') && !n.includes('relation')));
+    });
+    const kinRelationIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      // Match: "RELATION (with next of kin)", "RELATION                (with next of kin)", "Relation", etc.
+      return (n.includes('relation') && n.includes('kin')) || 
+             (n === 'relation') || 
+             n.includes('relation (with');
+    });
+    const admissionDateIdx = headerRow.findIndex((h) => {
+      const n = normalizeLabel(h);
+      return n.includes('date') && (n.includes('admission') || n.includes('admitted'));
+    });
 
     if (lNoIdx === -1) {
       return res.status(400).json({ error: 'CSV must have an L/No column' });
     }
+
+    // Log detected column indices for debugging
+    console.log(`Column indices - L/No: ${lNoIdx}, StaffNo: ${staffNoIdx}, IPPIS: ${ippisIdx}, S/N: ${snIdx}, Name: ${nameIdx}`);
+    console.log(`Profile indices - Gender: ${genderIdx}, Marital: ${maritalIdx}, Phone: ${phoneIdx}, Email: ${emailIdx}, Bank: ${bankIdx}, Account: ${accountIdx}, Dept: ${deptIdx}, NextOfKin: ${nextOfKinIdx}, KinRelation: ${kinRelationIdx}, AdmissionDate: ${admissionDateIdx}`);
 
     const financialCols = [];
     const newColInserts = { ledgers: [], labels: [], sorts: [] };
@@ -367,15 +415,41 @@ async function uploadTransCSV(req, res) {
       const staffNo  = staffNoIdx >= 0 ? (row[staffNoIdx] || '').trim() : '';
       const ippisVal = ippisIdx   >= 0 ? (row[ippisIdx]   || '').trim() : '';
       const nameVal  = nameIdx    >= 0 ? (row[nameIdx]    || '').trim() : '';
+      
+      // Extract member profile fields
+      const gender = genderIdx >= 0 ? (row[genderIdx] || '').trim() : '';
+      const marital = maritalIdx >= 0 ? (row[maritalIdx] || '').trim() : '';
+      const phone = phoneIdx >= 0 ? (row[phoneIdx] || '').trim() : '';
+      const email = emailIdx >= 0 ? (row[emailIdx] || '').trim() : '';
+      const bank = bankIdx >= 0 ? (row[bankIdx] || '').trim() : '';
+      const account = accountIdx >= 0 ? (row[accountIdx] || '').trim() : '';
+      const dept = deptIdx >= 0 ? (row[deptIdx] || '').trim() : '';
+      const nextOfKin = nextOfKinIdx >= 0 ? (row[nextOfKinIdx] || '').trim() : '';
+      const kinRelation = kinRelationIdx >= 0 ? (row[kinRelationIdx] || '').trim() : '';
+      const admissionDate = admissionDateIdx >= 0 ? (row[admissionDateIdx] || '').trim() : '';
+      
+      // Log profile data extraction for first few rows (debugging)
+      if (rowIdx <= 2 && (gender || marital || phone || email || bank || account || nextOfKin || kinRelation)) {
+        console.log(`Row ${rowIdx} profile: gender=${gender}, marital=${marital}, phone=${phone}, email=${email}, bank=${bank}, account=${account}, nextOfKin=${nextOfKin}, relation=${kinRelation}`);
+      }
 
       const existId = byLedger.get(lNoVal.toLowerCase()) ||
                       (staffNo ? byStaff.get(staffNo.toLowerCase()) : null);
 
       if (!existId) {
         if (!lNoVal) continue;
-        newMembers.push([lNoVal, staffNo || null, ippisVal || null, nameVal || lNoVal]);
+        newMembers.push([
+          lNoVal, staffNo || null, ippisVal || null, nameVal || lNoVal,
+          gender || null, marital || null, phone || null, email || null,
+          admissionDate || null, bank || null, account || null, dept || null,
+          nextOfKin || null, kinRelation || null
+        ]);
       }
-      dataRows.push({ lNoVal, staffNo, ippisVal, nameVal, existId, row });
+      dataRows.push({
+        lNoVal, staffNo, ippisVal, nameVal, existId, row,
+        memberId: existId, // will be updated with actual ID after insert
+        memberProfile: { gender, marital, phone, email, bank, account, dept, nextOfKin, kinRelation, admissionDate }
+      });
     }
 
     const client = await db.getClient();
@@ -387,21 +461,78 @@ async function uploadTransCSV(req, res) {
         const snArr = newMembers.map(r => r[1]);
         const giArr = newMembers.map(r => r[2]);
         const fnArr = newMembers.map(r => r[3]);
+        const genderArr = newMembers.map(r => r[4]);
+        const maritalArr = newMembers.map(r => r[5]);
+        const phoneArr = newMembers.map(r => r[6]);
+        const emailArr = newMembers.map(r => r[7]);
+        const admissionArr = newMembers.map(r => r[8]);
+        const bankArr = newMembers.map(r => r[9]);
+        const accountArr = newMembers.map(r => r[10]);
+        const deptArr = newMembers.map(r => r[11]);
+        const nextOfKinArr = newMembers.map(r => r[12]);
+        const kinRelationArr = newMembers.map(r => r[13]);
+        
         const ins = await client.query(
-          `INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, is_active)
-           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), TRUE
+          `INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission, bank, account_number, department, next_of_kin, next_of_kin_relation, is_active)
+           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), unnest($5::text[]), unnest($6::text[]), unnest($7::text[]), unnest($8::text[]), unnest($9::text[]), unnest($10::text[]), unnest($11::text[]), unnest($12::text[]), unnest($13::text[]), unnest($14::text[]), TRUE
            ON CONFLICT (ledger_no) DO UPDATE
              SET staff_no  = COALESCE(EXCLUDED.staff_no,  members.staff_no),
                  gifmis_no = COALESCE(EXCLUDED.gifmis_no, members.gifmis_no),
+                 gender = COALESCE(EXCLUDED.gender, members.gender),
+                 marital_status = COALESCE(EXCLUDED.marital_status, members.marital_status),
+                 phone = COALESCE(EXCLUDED.phone, members.phone),
+                 email = COALESCE(EXCLUDED.email, members.email),
+                 date_of_admission = COALESCE(EXCLUDED.date_of_admission, members.date_of_admission),
+                 bank = COALESCE(EXCLUDED.bank, members.bank),
+                 account_number = COALESCE(EXCLUDED.account_number, members.account_number),
+                 department = COALESCE(EXCLUDED.department, members.department),
+                 next_of_kin = COALESCE(EXCLUDED.next_of_kin, members.next_of_kin),
+                 next_of_kin_relation = COALESCE(EXCLUDED.next_of_kin_relation, members.next_of_kin_relation),
                  updated_at = NOW()
            RETURNING id, LOWER(ledger_no) AS ln, LOWER(COALESCE(staff_no,'')) AS sn`,
-          [lnArr, snArr, giArr, fnArr]
+          [lnArr, snArr, giArr, fnArr, genderArr, maritalArr, phoneArr, emailArr, admissionArr, bankArr, accountArr, deptArr, nextOfKinArr, kinRelationArr]
         );
         for (const r of ins.rows) {
           if (r.ln) byLedger.set(r.ln, r.id);
           if (r.sn && r.sn !== '') byStaff.set(r.sn, r.id);
         }
       }
+
+      // Update existing members with profile information from CSV
+      for (const dr of dataRows) {
+        if (!dr.existId && !dr.memberProfile) continue;
+        const memberId = dr.existId ||
+                         byLedger.get(dr.lNoVal.toLowerCase()) ||
+                         (dr.staffNo ? byStaff.get(dr.staffNo.toLowerCase()) : null);
+        if (!memberId) continue;
+
+        const prof = dr.memberProfile || {};
+        if (prof.gender || prof.marital || prof.phone || prof.email || prof.bank || prof.account || prof.dept || prof.nextOfKin || prof.kinRelation) {
+          try {
+            await client.query(
+              `UPDATE members SET
+                gender = COALESCE(NULLIF($1, ''), gender),
+                marital_status = COALESCE(NULLIF($2, ''), marital_status),
+                phone = COALESCE(NULLIF($3, ''), phone),
+                email = COALESCE(NULLIF($4, ''), email),
+                bank = COALESCE(NULLIF($5, ''), bank),
+                account_number = COALESCE(NULLIF($6, ''), account_number),
+                department = COALESCE(NULLIF($7, ''), department),
+                next_of_kin = COALESCE(NULLIF($8, ''), next_of_kin),
+                next_of_kin_relation = COALESCE(NULLIF($9, ''), next_of_kin_relation),
+                updated_at = NOW()
+               WHERE id = $10`,
+              [prof.gender || '', prof.marital || '', prof.phone || '', prof.email || '',
+               prof.bank || '', prof.account || '', prof.dept || '', prof.nextOfKin || '',
+               prof.kinRelation || '', memberId]
+            );
+          } catch (updateErr) {
+            console.error(`Failed to update member profile for ID ${memberId}:`, updateErr.message);
+            throw updateErr;
+          }
+        }
+      }
+      console.log(`Profile data update complete`);
 
       const tMemberIds = [];
       const tColKeys   = [];

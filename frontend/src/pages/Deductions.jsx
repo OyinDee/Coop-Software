@@ -54,10 +54,19 @@ function UploadModal({ month, year, onDone, onClose }) {
       const r = await api.post('/deductions/upload', form, {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
-      toast(r.data.message || 'Upload complete');
+      
+      // Show success message with upload details
+      const msg = r.data.message || `Uploaded successfully`;
+      console.log('Upload response:', r.data);
+      toast(msg);
+      
+      // Close modal and reload data
+      onClose();
       onDone(selMonth, selYear);
     } catch (err) {
-      toast(err.response?.data?.error || 'Upload failed', 'error');
+      const errorMsg = err.response?.data?.error || err.message || 'Upload failed';
+      console.error('Upload error:', err.response?.data || err);
+      toast(errorMsg, 'error');
     } finally {
       setUploading(false);
     }
