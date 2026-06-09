@@ -692,26 +692,21 @@ async function importCSV(req, res) {
       const r = {};
       for (const k of Object.keys(row)) r[k.trim()] = row[k];
 
-      const ledger_no = r['LEDGER No'] || r['Ledger No'] || r['ledger_no'] || r['L/No'] || r['L/NO'];
+      const ledger_no = r['Ledger No'] || r['LEDGER No'] || r['ledger_no'] || r['L/No'] || r['L/NO'];
       const full_name = r['Name'] || r['FULL NAME'] || r['full_name'] || r['NAME'];
       if (!ledger_no || !full_name) { skipped++; continue; }
 
-      const date_of_admission = parseDate(r['Date of Admission'] || r['DATE OF ADMISSION']);
+      const date_of_admission = parseDate(r['Date of admission'] || r['Date of Admission'] || r['DATE OF ADMISSION']);
 
-      // Flexible header matching - case insensitive
-      const findValue = (keys) => {
-        const upperR = {};
-        for (const k of Object.keys(r)) {
-          upperR[k.toUpperCase()] = r[k];
-        }
+      // ── Flexible header lookup ────────────────────────────────────────────
+      // Normalises all keys to UPPERCASE (trimmed) then tries each candidate
+      // in order, returning the first non-empty match.
+      const findValue = (...keys) => {
+        const upper = {};
+        for (const k of Object.keys(r)) upper[k.trim().toUpperCase()] = r[k];
         for (const key of keys) {
-          if (upperR[key.toUpperCase()]) return upperR[key.toUpperCase()];
-        }
-        // Try partial matches
-        const upperKeys = Object.keys(upperR);
-        for (const matchKey of keys) {
-          const match = upperKeys.find(k => k.includes(matchKey.toUpperCase()) || matchKey.toUpperCase().split(' ').some(word => k.includes(word)));
-          if (match) return upperR[match];
+          const val = upper[key.trim().toUpperCase()];
+          if (val !== undefined && String(val).trim() !== '') return String(val).trim();
         }
         return null;
       };
@@ -723,22 +718,47 @@ async function importCSV(req, res) {
              phone, email, date_of_admission, bank, account_number, department,
              next_of_kin, next_of_kin_relation)
           VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
-          ON CONFLICT (ledger_no) DO NOTHING
+          ON CONFLICT (ledger_no) DO UPDATE SET
+            staff_no        = COALESCE(EXCLUDED.staff_no,        members.staff_no),
+            gifmis_no       = COALESCE(EXCLUDED.gifmis_no,       members.gifmis_no),
+            full_name       = EXCLUDED.full_name,
+            gender          = COALESCE(EXCLUDED.gender,          members.gender),
+            marital_status  = COALESCE(EXCLUDED.marital_status,  members.marital_status),
+            phone           = COALESCE(EXCLUDED.phone,           members.phone),
+            email           = COALESCE(EXCLUDED.email,           members.email),
+            date_of_admission = COALESCE(EXCLUDED.date_of_admission, members.date_of_admission),
+            bank            = COALESCE(EXCLUDED.bank,            members.bank),
+            account_number  = COALESCE(EXCLUDED.account_number,  members.account_number),
+            department      = COALESCE(EXCLUDED.department,      members.department),
+            next_of_kin     = COALESCE(EXCLUDED.next_of_kin,     members.next_of_kin),
+            next_of_kin_relation = COALESCE(EXCLUDED.next_of_kin_relation, members.next_of_kin_relation),
+            updated_at      = NOW()
         `, [
           ledger_no.trim(),
-          findValue(['Staff No', 'STAFF NO']) || null,
-          findValue(['GIFMIS No', 'IPPIS No', 'GIFMIS NO', 'IPPIS NO']) || null,
+          // Staff No
+          findValue('Staff No', 'STAFF NO', 'staff_no', 'STAFF'),
+          // GIFMIS / IPPIS
+          findValue('GIFMIS No', 'GIFMIS NO', 'IPPIS No', 'IPPIS NO', 'gifmis_no'),
           full_name.trim(),
-          findValue(['Gender', 'GENDER']) || null,
-          findValue(['MARITAL STATUS', 'Marital Status', 'Marital']) || null,
-          findValue(['Phone No', 'Phone', 'GSM No', 'GSM', 'PHONE']) || null,
-          findValue(['FUOYE Email', 'FUOYE E-mail', 'Email', 'EMAIL', 'E-MAIL']) || null,
+          // Gender
+          findValue('GENDER', 'Gender'),
+          // Marital status — header has trailing space in this CSV
+          findValue('Marital status', 'MARITAL STATUS', 'Marital Status', 'Marital'),
+          // Phone — CSV header is "GSM No"
+          findValue('GSM No', 'GSM NO', 'Phone No', 'PHONE NO', 'Phone', 'PHONE', 'GSM'),
+          // Email — CSV header is "Fuoye Email address"
+          findValue('Fuoye Email address', 'FUOYE EMAIL ADDRESS', 'FUOYE Email', 'FUOYE E-mail', 'Email', 'EMAIL', 'E-MAIL'),
           date_of_admission,
-          findValue(['BANK', 'Bank']) || null,
-          findValue(['ACCOUNT NUMBER', 'Account Number', 'Acct No', 'Account No', 'ACCT']) || null,
-          findValue(['DEPARTMENT', 'Department', 'Dept']) || null,
-          findValue(['Next of Kin', 'NEXT OF KIN', 'Next of kin']) || null,
-          findValue(['RELATION', 'Relation', 'RELATIONSHIP', 'Relationship']) || null,
+          // Bank
+          findValue('BANK', 'Bank'),
+          // Account number — CSV header is "acct number"
+          findValue('acct number', 'ACCT NUMBER', 'ACCOUNT NUMBER', 'Account Number', 'Acct No', 'Account No', 'ACCT'),
+          // Department (not in this CSV but keep for other formats)
+          findValue('DEPARTMENT', 'Department', 'Dept'),
+          // Next of kin — CSV header has trailing space
+          findValue('Next of kin', 'NEXT OF KIN', 'Next of Kin', 'Next of kin '),
+          // Relationship
+          findValue('Relationship', 'RELATIONSHIP', 'RELATION', 'Relation'),
         ]);
         imported++;
       } catch (e) {
@@ -806,8 +826,6 @@ async function importBalances(req, res) {
     };
  
     // ── Flexible column getter ─────────────────────────────────────────────
-    // Tries multiple possible header spellings (UPPERCASE) for each field.
-    // The xlsx uses abbreviated names; the simple CSV format uses full names.
     const col = (r, ...keys) => {
       const upper = {};
       for (const k of Object.keys(r)) upper[k.trim().toUpperCase()] = r[k];
@@ -824,7 +842,6 @@ async function importBalances(req, res) {
       for (const k of Object.keys(row)) r[k.trim().toUpperCase()] = String(row[k] || '').trim();
  
       // ── Skip header/summary rows ───────────────────────────────────────
-      // S/N must be a positive integer; rows without it are totals / blanks
       const sn = (r['S/N'] || r['S/N.'] || '').replace(/\s/g, '');
       if (!/^\d+$/.test(sn)) { skipped++; continue; }
  
@@ -864,8 +881,6 @@ async function importBalances(req, res) {
       const memberId = memberRes.rows[0].id;
  
       // ── Detect format ──────────────────────────────────────────────────
-      // Trans-sheet format: has L/NO column (the xlsx monthly sheet)
-      // Simple format: SAVINGS, LOAN, LN INT, COMM columns
       const firstRowKeys = Object.keys(r).map(k => k.toUpperCase());
       const isTransFormat = firstRowKeys.some(k => k === 'L/NO' || k === 'L/NO.');
  
@@ -877,7 +892,6 @@ async function importBalances(req, res) {
           formFee, otherCharges, totalDeduction;
  
       if (isTransFormat) {
-        // Columns from MM__FEB___2026.xlsx (abbreviated headers)
         savingsBF        = parseAmt(r['SAVINGS B/F']);
         monthlySavings   = parseAmt(r['ADD: SAV'] || r['ADD: SAVINGS DURING THE MONTH'] || r['ADD: SAVINGS']);
         savingsBank      = parseAmt(r['ADD: SAV  (BANK)'] || r['ADD: SAV (BANK)'] || r['ADD: SAVINGS DURING THE MONTH (BANK)']);
@@ -900,7 +914,6 @@ async function importBalances(req, res) {
         totalDeduction   = parseAmt(r['TOTAL DEDUCTION']);
  
       } else {
-        // Simple balance format
         savingsBF        = 0;
         monthlySavings   = parseAmt(r['SAVINGS']);
         savingsBank      = 0;
@@ -920,15 +933,13 @@ async function importBalances(req, res) {
         formFee = 0; otherCharges = 0; totalDeduction = 0;
       }
  
-      // Extract month/year from the MONTH column (e.g. "FEBRUARY, 2026")
       const monthStr  = (r['MONTH'] || '').toUpperCase();
       const MONTHS    = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
                          'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-      let dataMonth   = MONTHS.findIndex(m => monthStr.includes(m)) + 1; // 1-12
+      let dataMonth   = MONTHS.findIndex(m => monthStr.includes(m)) + 1;
       let dataYear    = parseInt((monthStr.match(/\d{4}/) || [])[0]) || new Date().getFullYear();
       if (!dataMonth) { dataMonth = new Date().getMonth() + 1; }
  
-      // Previous month = B/F reference (for savings_bf, loan_bal_bf, etc.)
       let bfMonth = dataMonth - 1;
       let bfYear  = dataYear;
       if (bfMonth === 0) { bfMonth = 12; bfYear--; }
@@ -937,8 +948,6 @@ async function importBalances(req, res) {
       try {
         await client.query('BEGIN');
  
-        // ── SAVINGS ────────────────────────────────────────────────────────
-        // Store B/F as previous month record so cumulative total is correct
         if (savingsBF > 0) {
           await client.query(`
             INSERT INTO savings (member_id, amount, month, year, description)
@@ -946,7 +955,6 @@ async function importBalances(req, res) {
             ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
           `, [memberId, savingsBF, bfMonth, bfYear]);
         }
-        // Store the monthly savings contribution for the current month
         if (monthlySavings > 0 || savingsBank > 0) {
           const savTotal = monthlySavings + savingsBank;
           await client.query(`
@@ -956,7 +964,6 @@ async function importBalances(req, res) {
           `, [memberId, savTotal, dataMonth, dataYear]);
         }
  
-        // ── LOAN ──────────────────────────────────────────────────────────
         if (loanBF > 0 && monthlyPrincipal > 0) {
           await client.query(
             `DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`,
@@ -978,16 +985,9 @@ async function importBalances(req, res) {
             VALUES ($1,$2,$3,$4,$5,$6,$7,$8,1,$9,$10,'Opening Balance')
             RETURNING id
           `, [
-            memberId,
-            loanBF,
-            months,
-            balanceAfterJan,
-            monthlyPrincipal,
-            loanIntBF,
-            monthlyInterest,
-            janInterest,
-            loanStatus,
-            dateIssued,
+            memberId, loanBF, months, balanceAfterJan,
+            monthlyPrincipal, loanIntBF, monthlyInterest,
+            janInterest, loanStatus, dateIssued,
           ]);
  
           if (janPrincipal > 0 || janInterest > 0) {
@@ -999,7 +999,6 @@ async function importBalances(req, res) {
           }
         }
  
-        // ── COMMODITY ─────────────────────────────────────────────────────
         if (commBF > 0) {
           await client.query(
             `DELETE FROM commodity WHERE member_id=$1 AND month=$2 AND year=$3 AND description='Balance B/F'`,
@@ -1011,8 +1010,6 @@ async function importBalances(req, res) {
           `, [memberId, commBF, bfMonth, bfYear]);
         }
  
-        // ── MONTHLY TRANSACTION RECORD (monthly_trans) ────────────────────
-        // Store all the trans-sheet values so the ledger view shows them correctly
         const transValues = {
           savings_bf:          savingsBF,
           savings_add:         monthlySavings,
@@ -1076,7 +1073,6 @@ async function getMemberLedger(req, res) {
   const year     = parseInt(req.query.year) || new Date().getFullYear();
 
   try {
-    // All monthly_trans for this member/year
     const transRes = await db.query(
       `SELECT month, column_key, amount FROM monthly_trans
        WHERE member_id=$1 AND year=$2 ORDER BY month`,
@@ -1088,7 +1084,6 @@ async function getMemberLedger(req, res) {
       byMonth[r.month][r.column_key] = parseFloat(r.amount) || 0;
     }
 
-    // Shares additions this year
     const sharesRes = await db.query(
       `SELECT month, amount FROM shares WHERE member_id=$1 AND year=$2`,
       [memberId, year]
@@ -1096,14 +1091,12 @@ async function getMemberLedger(req, res) {
     const sharesMap = {};
     for (const s of sharesRes.rows) sharesMap[s.month] = parseFloat(s.amount) || 0;
 
-    // Shares B/F = cumulative before this year
     const sharesBFRes = await db.query(
       `SELECT COALESCE(SUM(amount),0) AS total FROM shares WHERE member_id=$1 AND year<$2`,
       [memberId, year]
     );
     const sharesBF = parseFloat(sharesBFRes.rows[0].total) || 0;
 
-    // B/F from earliest month's _bf columns
     const months = Object.keys(byMonth).map(Number).sort((a, b) => a - b);
     const firstData = months.length ? (byMonth[months[0]] || {}) : {};
     const bf = {
@@ -1115,7 +1108,6 @@ async function getMemberLedger(req, res) {
       comm_bal_bf: firstData.comm_bal_bf  || 0,
     };
 
-    // Build 12 monthly rows
     const g = (d, k) => (d ? d[k] || 0 : 0);
     const rows = [];
     for (let m = 1; m <= 12; m++) {
@@ -1139,7 +1131,6 @@ async function getMemberLedger(req, res) {
         form:                g(d, 'form'),
         other_charges:       g(d, 'other_charges'),
         total_deduction:     g(d, 'total_deduction'),
-        // C/F balances (for reference)
         savings_cf:          g(d, 'savings_cf'),
         loan_ledger_bal:     g(d, 'loan_ledger_bal'),
         loan_int_cf:         g(d, 'loan_int_cf'),
@@ -1147,7 +1138,6 @@ async function getMemberLedger(req, res) {
       });
     }
 
-    // Latest C/F for summary
     const lastData = months.length ? (byMonth[months[months.length - 1]] || {}) : {};
     const summary = {
       net_savings:  lastData.savings_cf      || 0,
@@ -1157,7 +1147,6 @@ async function getMemberLedger(req, res) {
       total_shares: sharesBF + rows.reduce((s, r) => s + r.shares, 0),
     };
 
-    // Available years for this member
     const yearsRes = await db.query(
       `SELECT DISTINCT year FROM monthly_trans WHERE member_id=$1
        UNION SELECT DISTINCT year FROM shares WHERE member_id=$1
@@ -1201,7 +1190,7 @@ async function getDeactivatedMembers(req, res) {
 // ── Reactivate a deactivated member ──────────────────────────────────────────
 async function reactivateMember(req, res) {
   const { id } = req.params;
-  const { reason } = req.body; // optional reason why reactivating
+  const { reason } = req.body;
 
   try {
     const result = await db.query(
