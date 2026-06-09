@@ -7,7 +7,7 @@ import api from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
-const PAGE_SIZE = 50; // Increased page size for better performance
+const PAGE_SIZE = 50;
 
 const EMPTY_MEMBER = {
   ledger_no: '', staff_no: '', gifmis_no: '', full_name: '', gender: 'Male',
@@ -15,7 +15,6 @@ const EMPTY_MEMBER = {
   bank: '', account_number: '', department: '', next_of_kin: '', next_of_kin_relation: '',
 };
 
-// Debounce function for search
 function useDebounce(callback, delay) {
   const timeoutRef = useRef();
   return useCallback((...args) => {
@@ -46,7 +45,6 @@ export default function Members() {
   const toast = useToast();
   const navigate = useNavigate();
 
-  // Debounced search function
   const debouncedLoad = useDebounce((q = '') => {
     setLoading(true);
     api.get('/members', { params: q ? { search: q, limit: 1000 } : {} })
@@ -54,11 +52,10 @@ export default function Members() {
       .finally(() => setLoading(false));
   }, 300);
 
-  // Memoized filtered members for better performance
   const filteredMembers = useMemo(() => {
     if (!search) return members;
     const q = search.toLowerCase();
-    return members.filter(m => 
+    return members.filter(m =>
       m.full_name?.toLowerCase().includes(q) ||
       m.ledger_no?.toLowerCase().includes(q) ||
       m.staff_no?.toLowerCase().includes(q) ||
@@ -66,16 +63,15 @@ export default function Members() {
     );
   }, [members, search]);
 
-  // Paginated members
   const pageMembers = useMemo(() => {
     const pageStart = (page - 1) * PAGE_SIZE;
     return filteredMembers.slice(pageStart, pageStart + PAGE_SIZE);
   }, [filteredMembers, page]);
 
   useEffect(() => { debouncedLoad(''); }, []);
-  useEffect(() => { 
-    debouncedLoad(search); 
-    setPage(1); 
+  useEffect(() => {
+    debouncedLoad(search);
+    setPage(1);
   }, [search]);
 
   const openAdd = () => { setForm(EMPTY_MEMBER); setEditMember(null); setAddOpen(true); };
@@ -102,7 +98,8 @@ export default function Members() {
         await api.post('/members', form);
         toast('Member added');
       }
-      setAddOpen(false); load(search);
+      setAddOpen(false);
+      debouncedLoad(search); // ← was: load(search)
     } catch (err) {
       toast(err.response?.data?.error || 'Error saving member', 'error');
     } finally { setSaving(false); }
@@ -112,7 +109,8 @@ export default function Members() {
     if (!window.confirm('Deactivate this member?')) return;
     try {
       await api.delete(`/members/${id}`);
-      toast('Member deactivated'); load(search);
+      toast('Member deactivated');
+      debouncedLoad(search); // ← was: load(search)
     } catch { toast('Error', 'error'); }
   };
 
@@ -126,7 +124,7 @@ export default function Members() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setImportResult({ ok: true, ...r.data });
-      load();
+      debouncedLoad(''); // ← was: load()
     } catch (err) {
       console.error('Import error:', err.response?.data || err);
       setImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
@@ -145,7 +143,7 @@ export default function Members() {
         headers: { 'Content-Type': 'multipart/form-data' },
       });
       setBalImportResult({ ok: true, ...r.data });
-      load();
+      debouncedLoad(''); // ← was: load()
     } catch (err) {
       console.error('Balance import error:', err.response?.data || err);
       setBalImportResult({ ok: false, message: err.response?.data?.error || 'Import failed' });
@@ -348,11 +346,10 @@ export default function Members() {
         <Modal title="Import Members from CSV" onClose={() => { if (!importing) { setImportOpen(false); setImportResult(null); } }}>
           <div className="info-box">
             Expected columns:<br />
-            <code>S/N, LEDGER No, GIFMIS No, Staff No, Name, Gender, Phone No., FUOYE E-mail Address, Date of Admission, MARITAL STATUS, BANK, ACCOUNT NUMBER, DEPARTMENT</code><br /><br />
-            Duplicate ledger numbers will be skipped automatically.
+            <code>S/N, Ledger No, Name, Staff No, GIFMIS No, Fuoye Email address, GSM No, GENDER, Date of admission, Marital status, BANK, acct number, Next of kin, Relationship</code><br /><br />
+            Duplicate ledger numbers will be updated (not skipped).
           </div>
 
-          {/* Uploading spinner */}
           {importing && (
             <div style={{ display: 'flex', flexDirection: 'column', alignItems: 'center', gap: 14, padding: '28px 0' }}>
               <div style={{
@@ -365,7 +362,6 @@ export default function Members() {
             </div>
           )}
 
-          {/* Result summary */}
           {!importing && importResult && (
             <div style={{ margin: '4px 0 12px', padding: '14px 16px', borderRadius: 4, border: `1px solid ${importResult.ok ? 'rgba(62,207,142,.25)' : 'rgba(241,96,96,.25)'}`, background: importResult.ok ? 'rgba(62,207,142,.06)' : 'rgba(241,96,96,.06)' }}>
               <div style={{ fontWeight: 600, color: importResult.ok ? 'var(--green)' : 'var(--red)', marginBottom: 6 }}>
@@ -389,10 +385,9 @@ export default function Members() {
             </div>
           )}
 
-          {/* Drop zone — hidden while importing or after result */}
           {!importing && !importResult && (
             <>
-              <input type="file" accept=".csv" ref={fileRef} style={{ display: 'none' }} onChange={(e) => handleImport(e.target.files[0])} />
+              <input type="file" accept=".csv,.xlsx,.xls" ref={fileRef} style={{ display: 'none' }} onChange={(e) => handleImport(e.target.files[0])} />
               <div
                 className={`drop-zone ${dragging ? 'over' : ''}`}
                 onClick={() => fileRef.current.click()}
@@ -405,8 +400,8 @@ export default function Members() {
                     <polyline points="21 15 21 19 3 19 3 15" /><line x1="12" y1="3" x2="12" y2="15" /><polyline points="7 8 12 3 17 8" />
                   </svg>
                 </div>
-                <div className="dz-text">Click to select CSV file, or drag and drop</div>
-                <div className="dz-sub">.csv files only</div>
+                <div className="dz-text">Click to select CSV or Excel file, or drag and drop</div>
+                <div className="dz-sub">.csv, .xlsx, .xls</div>
               </div>
             </>
           )}
@@ -468,7 +463,7 @@ export default function Members() {
 
           {!balImporting && !balImportResult && (
             <>
-              <input type="file" accept=".csv" ref={balFileRef} style={{ display: 'none' }} onChange={(e) => handleBalanceImport(e.target.files[0])} />
+              <input type="file" accept=".csv,.xlsx,.xls" ref={balFileRef} style={{ display: 'none' }} onChange={(e) => handleBalanceImport(e.target.files[0])} />
               <div
                 className="drop-zone"
                 onClick={() => balFileRef.current.click()}
@@ -480,8 +475,8 @@ export default function Members() {
                     <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
                   </svg>
                 </div>
-                <div className="dz-text">Click to select balances CSV, or drag and drop</div>
-                <div className="dz-sub">.csv files only</div>
+                <div className="dz-text">Click to select balances file, or drag and drop</div>
+                <div className="dz-sub">.csv, .xlsx, .xls</div>
               </div>
             </>
           )}

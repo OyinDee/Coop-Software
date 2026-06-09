@@ -644,17 +644,83 @@ async function importCSV(req, res) {
 
   function parseDate(raw) {
     if (!raw) return null;
-    const s = raw.trim();
+    const s = String(raw).trim();
     if (!s) return null;
+
+    // ── 1. ISO already formatted ────────────────────────────────────────────
     if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
-    const mmm_yyyy = s.match(/^([A-Za-z]{3})[\/\-](\d{4})$/);
-    if (mmm_yyyy) {
-      const d = new Date(`1 ${mmm_yyyy[1]} ${mmm_yyyy[2]}`);
+
+    // ── 2. Excel serial number (e.g. 43240 → 2018-05-20) ───────────────────
+    // Serials for years 2000-2040 fall in range 36526-51544.
+    // We guard with > 1000 so bare years like "2016" aren't treated as serials.
+    if (/^\d{4,6}$/.test(s)) {
+      const serial = parseInt(s, 10);
+      if (serial > 20000) { // 20000 = ~1954, safe floor for admission dates
+        const corrected = serial >= 61 ? serial - 1 : serial;
+        const epoch = new Date(1899, 11, 31); // Dec 31 1899
+        epoch.setDate(epoch.getDate() + corrected);
+        if (!isNaN(epoch)) return epoch.toISOString().split('T')[0];
+      }
+    }
+
+    // ── 3. Normalise the string then try multiple patterns ──────────────────
+    // Strip ordinal suffixes (1ST, 2ND, 3RD, 4TH, IST typo) and stray dots
+    let n = s
+      .replace(/\b(\d+)(ST|ND|RD|TH)\b\.?/gi, '$1') // "1ST" → "1", "IST" left alone below
+      .replace(/\bIST\b/gi, '1')                      // "IST JULY" typo → "1 JULY"
+      .replace(/\./g, '')                              // "JAN." → "JAN"
+      .replace(/,/g, '')                               // "JANUARY, 2020" → "JANUARY 2020"
+      .replace(/\s+/g, ' ')
+      .trim();
+
+    // Expand full month names to 3-letter abbrevs for uniform parsing
+    const MONTHS = {
+      JANUARY:'Jan', FEBRUARY:'Feb', MARCH:'Mar', APRIL:'Apr',
+      MAY:'May', JUNE:'Jun', JULY:'Jul', AUGUST:'Aug',
+      SEPTEMBER:'Sep', OCTOBER:'Oct', NOVEMBER:'Nov', DECEMBER:'Dec',
+    };
+    for (const [full, abbr] of Object.entries(MONTHS)) {
+      n = n.replace(new RegExp(`\\b${full}\\b`, 'gi'), abbr);
+    }
+
+    // "6 Aug 16" / "6 Aug 2016" / "6-Aug-16" / "28-APR-2017"
+    const dmy = n.match(/^(\d{1,2})[\s\-\/]([A-Za-z]{3})[\s\-\/](\d{2,4})$/);
+    if (dmy) {
+      const year = dmy[3].length === 2
+        ? (parseInt(dmy[3]) > 50 ? '19' : '20') + dmy[3]
+        : dmy[3];
+      const d = new Date(`${dmy[1]} ${dmy[2]} ${year}`);
       if (!isNaN(d)) return d.toISOString().split('T')[0];
     }
+
+    // "1 Aug 2020" already covered above; also handle "Aug 2016" (no day → 1st)
+    const my = n.match(/^([A-Za-z]{3})[\s\-\/](\d{4})$/);
+    if (my) {
+      const d = new Date(`1 ${my[1]} ${my[2]}`);
+      if (!isNaN(d)) return d.toISOString().split('T')[0];
+    }
+
+    // "1 Jan 2020" with full or abbrev month, space-separated (after normalisation)
+    const dmy2 = n.match(/^(\d{1,2})\s+([A-Za-z]{3})\s+(\d{4})$/);
+    if (dmy2) {
+      const d = new Date(`${dmy2[1]} ${dmy2[2]} ${dmy2[3]}`);
+      if (!isNaN(d)) return d.toISOString().split('T')[0];
+    }
+
+    // "Jan 2020" / "Jan 2019" — month + year only, no day
+    const my2 = n.match(/^([A-Za-z]{3})\s+(\d{4})$/);
+    if (my2) {
+      const d = new Date(`1 ${my2[1]} ${my2[2]}`);
+      if (!isNaN(d)) return d.toISOString().split('T')[0];
+    }
+
+    // ── 4. Last-resort generic parse (avoid for ambiguous values) ───────────
+    // Skip if value looks like a pure year (already failed serial check above)
+    if (/^\d{4}$/.test(s)) return null;
     const d = new Date(s);
-    if (!isNaN(d)) return d.toISOString().split('T')[0];
-    return null;
+    if (!isNaN(d) && d.getFullYear() > 1970) return d.toISOString().split('T')[0];
+
+    return null; // unparseable — admit date will be NULL, not an error
   }
 
   try {
