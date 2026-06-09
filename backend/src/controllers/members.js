@@ -698,6 +698,24 @@ async function importCSV(req, res) {
 
       const date_of_admission = parseDate(r['Date of Admission'] || r['DATE OF ADMISSION']);
 
+      // Flexible header matching - case insensitive
+      const findValue = (keys) => {
+        const upperR = {};
+        for (const k of Object.keys(r)) {
+          upperR[k.toUpperCase()] = r[k];
+        }
+        for (const key of keys) {
+          if (upperR[key.toUpperCase()]) return upperR[key.toUpperCase()];
+        }
+        // Try partial matches
+        const upperKeys = Object.keys(upperR);
+        for (const matchKey of keys) {
+          const match = upperKeys.find(k => k.includes(matchKey.toUpperCase()) || matchKey.toUpperCase().split(' ').some(word => k.includes(word)));
+          if (match) return upperR[match];
+        }
+        return null;
+      };
+
       try {
         await db.query(`
           INSERT INTO members
@@ -708,20 +726,19 @@ async function importCSV(req, res) {
           ON CONFLICT (ledger_no) DO NOTHING
         `, [
           ledger_no.trim(),
-          r['Staff No']  || r['STAFF NO']  || r['STAFF No'] || null,
-          r['GIFMIS No'] || r['GIFMIS NO'] || r['IPPIS No'] || r['IPPIS NO'] || null,
+          findValue(['Staff No', 'STAFF NO']) || null,
+          findValue(['GIFMIS No', 'IPPIS No', 'GIFMIS NO', 'IPPIS NO']) || null,
           full_name.trim(),
-          r['Gender']   || r['GENDER']    || null,
-          r['MARITAL STATUS'] || r['Marital Status'] || null,
-          r['Phone No.'] || r['PHONE'] || r['Phone'] || r['GSM No'] || r['GSM NO'] || null,
-          r['FUOYE E-mail Address'] || r['Email'] || r['EMAIL'] || r['e-mail'] || r['E-MAIL'] || null,
+          findValue(['Gender', 'GENDER']) || null,
+          findValue(['MARITAL STATUS', 'Marital Status', 'Marital']) || null,
+          findValue(['Phone No', 'Phone', 'GSM No', 'GSM', 'PHONE']) || null,
+          findValue(['FUOYE Email', 'FUOYE E-mail', 'Email', 'EMAIL', 'E-MAIL']) || null,
           date_of_admission,
-          r['BANK'] || r['Bank'] || null,
-          r['ACCOUNT NUMBER'] || r['Account Number'] || null,
-          r['DEPARTMENT'] || r['Department'] || null,
-          r['Next of Kin'] || r['NEXT OF KIN'] || null,
-          r['RELATION                (with next of kin)'] ||
-            r['RELATION (with next of kin)'] || r['Relation'] || null,
+          findValue(['BANK', 'Bank']) || null,
+          findValue(['ACCOUNT NUMBER', 'Account Number', 'Acct No', 'Account No', 'ACCT']) || null,
+          findValue(['DEPARTMENT', 'Department', 'Dept']) || null,
+          findValue(['Next of Kin', 'NEXT OF KIN', 'Next of kin']) || null,
+          findValue(['RELATION', 'Relation', 'RELATIONSHIP', 'Relationship']) || null,
         ]);
         imported++;
       } catch (e) {
