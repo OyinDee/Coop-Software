@@ -8,6 +8,11 @@ const IDENTITY_HEADERS = new Set([
   'email', 'e-mail', 'bank', 'account', 'account number', 'acct',
   'department', 'next of kin', 'kin', 'relation', 'date of admission'
 ]);
+const toDateOrNull = (v) => {
+  if (!v || typeof v !== 'string') return null;
+  const s = v.trim();
+  return s === '' ? null : s;
+};
 
 function normalizeLabel(h) {
   return h.toLowerCase()
@@ -441,7 +446,7 @@ async function uploadTransCSV(req, res) {
         newMembers.push([
           lNoVal, staffNo || null, ippisVal || null, nameVal || lNoVal,
           gender || null, marital || null, phone || null, email || null,
-          admissionDate || null, bank || null, account || null, dept || null,
+           toDateOrNull(admissionDate), bank || null, account || null, dept || null,
           nextOfKin || null, kinRelation || null
         ]);
       }
@@ -465,7 +470,7 @@ async function uploadTransCSV(req, res) {
         const maritalArr = newMembers.map(r => r[5]);
         const phoneArr = newMembers.map(r => r[6]);
         const emailArr = newMembers.map(r => r[7]);
-        const admissionArr = newMembers.map(r => r[8]);
+        const admissionArr = newMembers.map(r => toDateOrNull(r[8]));
         const bankArr = newMembers.map(r => r[9]);
         const accountArr = newMembers.map(r => r[10]);
         const deptArr = newMembers.map(r => r[11]);
@@ -474,7 +479,7 @@ async function uploadTransCSV(req, res) {
         
         const ins = await client.query(
           `INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission, bank, account_number, department, next_of_kin, next_of_kin_relation, is_active)
-           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), unnest($5::text[]), unnest($6::text[]), unnest($7::text[]), unnest($8::text[]), unnest($9::text[]), unnest($10::text[]), unnest($11::text[]), unnest($12::text[]), unnest($13::text[]), unnest($14::text[]), TRUE
+           SELECT unnest($1::text[]), unnest($2::text[]), unnest($3::text[]), unnest($4::text[]), unnest($5::text[]), unnest($6::text[]), unnest($7::text[]), unnest($8::text[]), unnest($9::date[]), unnest($10::text[]), unnest($11::text[]), unnest($12::text[]), unnest($13::text[]), unnest($14::text[]), TRUE
            ON CONFLICT (ledger_no) DO UPDATE
              SET staff_no  = COALESCE(EXCLUDED.staff_no,  members.staff_no),
                  gifmis_no = COALESCE(EXCLUDED.gifmis_no, members.gifmis_no),
