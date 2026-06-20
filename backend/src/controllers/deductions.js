@@ -206,12 +206,11 @@ async function updateTransColumn(req, res) {
   }
 }
 
-// FIX: Removed penalty logic - not in Excel reference
 // Sync repayments from monthly deductions to loan tracking
 async function syncLoanRepayment(client, memberId, month, year, principalPaid, interestPaid, description) {
-  // If no payment made, skip - do NOT apply penalties
+  // If no payment made, skip
   if (principalPaid <= 0 && interestPaid <= 0) {
-    return; // FIX: Removed penalty logic
+    return;
   }
   
   // Get active or partially cleared loans
@@ -345,7 +344,6 @@ async function uploadTransCSV(req, res) {
     });
     const kinRelationIdx = headerRow.findIndex((h) => {
       const n = normalizeLabel(h);
-      // Match: "RELATION (with next of kin)", "RELATION                (with next of kin)", "Relation", etc.
       return (n.includes('relation') && n.includes('kin')) || 
              (n === 'relation') || 
              n.includes('relation (with');
@@ -363,7 +361,7 @@ async function uploadTransCSV(req, res) {
     console.log(`Column indices - L/No: ${lNoIdx}, StaffNo: ${staffNoIdx}, IPPIS: ${ippisIdx}, S/N: ${snIdx}, Name: ${nameIdx}`);
     console.log(`Profile indices - Gender: ${genderIdx}, Marital: ${maritalIdx}, Phone: ${phoneIdx}, Email: ${emailIdx}, Bank: ${bankIdx}, Account: ${accountIdx}, Dept: ${deptIdx}, NextOfKin: ${nextOfKinIdx}, KinRelation: ${kinRelationIdx}, AdmissionDate: ${admissionDateIdx}`);
 
-    const financialCols = [];
+    const financialColsRaw = [];
     const newColInserts = { ledgers: [], labels: [], sorts: [] };
     for (let i = 0; i < headerRow.length; i++) {
       const h = headerRow[i];
@@ -386,15 +384,33 @@ async function uploadTransCSV(req, res) {
           newColInserts.sorts.push(canonMeta.sort);
         }
       }
-      financialCols.push({ idx: i, key: colKey });
+      financialColsRaw.push({ idx: i, key: colKey });
     }
 
+    // FIX 1: Deduplicate financialCols by key — last column with a given key wins.
+    // Prevents duplicate (member_id, column_key, month, year) entries when two CSV
+    // columns resolve to the same canonical key (e.g. trailing empty header columns).
+    const seenFinancialKeys = new Map();
+    for (const col of financialColsRaw) {
+      seenFinancialKeys.set(col.key, col);
+    }
+    const financialCols = [...seenFinancialKeys.values()];
+
     if (newColInserts.ledgers.length > 0) {
+      // Deduplicate newColInserts by key before inserting
+      const uniqueColKeys = new Map();
+      for (let i = 0; i < newColInserts.ledgers.length; i++) {
+        uniqueColKeys.set(newColInserts.ledgers[i], { label: newColInserts.labels[i], sort: newColInserts.sorts[i] });
+      }
+      const dedupLedgers = [...uniqueColKeys.keys()];
+      const dedupLabels = dedupLedgers.map(k => uniqueColKeys.get(k).label);
+      const dedupSorts  = dedupLedgers.map(k => uniqueColKeys.get(k).sort);
+
       await db.query(
         `INSERT INTO trans_columns (key, label, sort_order)
          SELECT * FROM UNNEST($1::text[], $2::text[], $3::int[])
          ON CONFLICT (key) DO NOTHING`,
-        [newColInserts.ledgers, newColInserts.labels, newColInserts.sorts]
+        [dedupLedgers, dedupLabels, dedupSorts]
       );
     }
 
@@ -408,7 +424,6 @@ async function uploadTransCSV(req, res) {
 
     const dataRows = [];
     const newMembers = [];
-    
 
     for (let rowIdx = 1; rowIdx < records.length; rowIdx++) {
       const row = records[rowIdx];
@@ -420,7 +435,13 @@ async function uploadTransCSV(req, res) {
 
       const staffNo  = staffNoIdx >= 0 ? (row[staffNoIdx] || '').trim() : '';
       const ippisVal = ippisIdx   >= 0 ? (row[ippisIdx]   || '').trim() : '';
-      const nameVal  = nameIdx    >= 0 ? (row[nameIdx]    || '').trim() : '';
+      // FIX 2: Strip embedded newlines from name — a newline inside a quoted CSV cell
+      // causes csv-parse to emit the row continuation as a separate record with the
+      // same L/No, producing duplicate ledger_no entries in newMembers and triggering
+      // "ON CONFLICT DO UPDATE command cannot affect row a second time".
+      const nameVal  = nameIdx >= 0
+        ? (row[nameIdx] || '').trim().replace(/[\r\n]+/g, ' ')
+        : '';
       
       // Extract member profile fields
       const gender = genderIdx >= 0 ? (row[genderIdx] || '').trim() : '';
@@ -463,20 +484,34 @@ async function uploadTransCSV(req, res) {
       await client.query('BEGIN');
 
       if (newMembers.length > 0) {
-        const lnArr = newMembers.map(r => r[0]);
-        const snArr = newMembers.map(r => r[1]);
-        const giArr = newMembers.map(r => r[2]);
-        const fnArr = newMembers.map(r => r[3]);
-        const genderArr = newMembers.map(r => r[4]);
-        const maritalArr = newMembers.map(r => r[5]);
-        const phoneArr = newMembers.map(r => r[6]);
-        const emailArr = newMembers.map(r => r[7]);
-        const admissionArr = newMembers.map(r => toDateOrNull(r[8]));
-        const bankArr = newMembers.map(r => r[9]);
-        const accountArr = newMembers.map(r => r[10]);
-        const deptArr = newMembers.map(r => r[11]);
-        const nextOfKinArr = newMembers.map(r => r[12]);
-        const kinRelationArr = newMembers.map(r => r[13]);
+        // FIX 3: Deduplicate newMembers by ledger_no before the bulk UNNEST insert.
+        // A quoted cell containing a newline (e.g. a name like "AYENI EBENEZER OJO\n")
+        // causes csv-parse to split one logical row into two records, both sharing the
+        // same L/No. Without dedup, the UNNEST-based upsert tries to update the same
+        // members row twice in a single statement, which Postgres rejects with:
+        //   "ON CONFLICT DO UPDATE command cannot affect row a second time"
+        const seenNewLedgers = new Set();
+        const uniqueNewMembers = newMembers.filter((r) => {
+          const key = (r[0] || '').toLowerCase();
+          if (seenNewLedgers.has(key)) return false;
+          seenNewLedgers.add(key);
+          return true;
+        });
+
+        const lnArr         = uniqueNewMembers.map(r => r[0]);
+        const snArr         = uniqueNewMembers.map(r => r[1]);
+        const giArr         = uniqueNewMembers.map(r => r[2]);
+        const fnArr         = uniqueNewMembers.map(r => r[3]);
+        const genderArr     = uniqueNewMembers.map(r => r[4]);
+        const maritalArr    = uniqueNewMembers.map(r => r[5]);
+        const phoneArr      = uniqueNewMembers.map(r => r[6]);
+        const emailArr      = uniqueNewMembers.map(r => r[7]);
+        const admissionArr  = uniqueNewMembers.map(r => toDateOrNull(r[8]));
+        const bankArr       = uniqueNewMembers.map(r => r[9]);
+        const accountArr    = uniqueNewMembers.map(r => r[10]);
+        const deptArr       = uniqueNewMembers.map(r => r[11]);
+        const nextOfKinArr  = uniqueNewMembers.map(r => r[12]);
+        const kinRelationArr = uniqueNewMembers.map(r => r[13]);
         
         const ins = await client.query(
           `INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission, bank, account_number, department, next_of_kin, next_of_kin_relation, is_active)
@@ -672,7 +707,6 @@ async function uploadTransCSV(req, res) {
         );
       }
 
-      // FIX: Removed penalty logic, only sync actual repayments
       for (const [memberId, { principal_paid, interest_paid }] of loanSyncMap) {
         await syncLoanRepayment(client, memberId, m, y, principal_paid, interest_paid, null);
       }
@@ -924,7 +958,6 @@ async function getReconciliationData(req, res) {
   }
 }
 
-// FIX: Corrected month generation logic using simple arithmetic (no MIN() caps)
 async function generateNextMonth(req, res) {
   const { fromMonth, fromYear, force } = req.body;
 
@@ -998,33 +1031,32 @@ async function generateNextMonth(req, res) {
       const bulkRows = [];
       
       for (const [memberId, prev] of Object.entries(memberData)) {
-        // FIX: Use simple arithmetic, NO MIN() safety caps
         const savings_bf           = g(prev, 'savings_cf');
         const savings_add          = g(prev, 'savings_add');
-        const savings_add_bank     = 0; // New deposits come from CSV
+        const savings_add_bank     = 0;
         const savings_withdrawal   = g(prev, 'savings_withdrawal');
         const savings_cf           = savings_bf + savings_add + savings_add_bank - savings_withdrawal;
 
         const loan_bal_bf          = g(prev, 'loan_ledger_bal');
-        const loan_granted         = 0; // New loans come from CSV
+        const loan_granted         = 0;
         const loan_repayment       = g(prev, 'loan_repayment');
-        const loan_repayment_bank  = 0; // Bank payments come from CSV
+        const loan_repayment_bank  = 0;
         const loan_ledger_bal      = loan_bal_bf + loan_granted - loan_repayment - loan_repayment_bank;
 
         const loan_int_bf          = g(prev, 'loan_int_cf');
         const loan_int_charged     = loan_granted > 0 ? Math.round(loan_granted * interestRate * 100) / 100 : 0;
         const loan_int_paid        = g(prev, 'loan_int_paid');
-        const loan_int_paid_bank   = 0; // Bank payments come from CSV
+        const loan_int_paid_bank   = 0;
         const loan_int_cf          = loan_int_bf + loan_int_charged - loan_int_paid - loan_int_paid_bank;
 
         const comm_bal_bf          = g(prev, 'comm_bal_cf');
-        const comm_add             = 0; // New commodity come from CSV
+        const comm_add             = 0;
         const comm_repayment       = g(prev, 'comm_repayment');
-        const comm_repayment_bank  = 0; // Bank payments come from CSV
+        const comm_repayment_bank  = 0;
         const comm_bal_cf          = comm_bal_bf + comm_add - comm_repayment - comm_repayment_bank;
 
-        const form                 = 0; // Forms from CSV
-        const other_charges        = 0; // Charges from CSV
+        const form                 = 0;
+        const other_charges        = 0;
         const total_deduction      = savings_add + savings_add_bank + loan_repayment + loan_repayment_bank 
                                    + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank 
                                    + form + other_charges;
@@ -1083,7 +1115,6 @@ async function generateNextMonth(req, res) {
   }
 }
 
-// FIX: Simplified patch logic using key mapping
 async function patchMonthEntry(req, res) {
   const { member_id, month, year, changes } = req.body;
   if (!member_id || !month || !year || !changes || typeof changes !== 'object') {
@@ -1128,7 +1159,6 @@ async function patchMonthEntry(req, res) {
 
     const g = (k) => data[k] || 0;
     
-    // FIX: Simple arithmetic, no conditional logic
     const savings_cf = Math.max(0, g('savings_bf') + g('savings_add') + g('savings_add_bank') - g('savings_withdrawal'));
     const loan_ledger_bal = Math.max(0, g('loan_bal_bf') + g('loan_granted') - g('loan_repayment') - g('loan_repayment_bank'));
     const loan_int_cf = Math.max(0, g('loan_int_bf') + g('loan_int_charged') - g('loan_int_paid') - g('loan_int_paid_bank'));
