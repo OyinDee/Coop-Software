@@ -676,26 +676,29 @@ async function uploadTransCSV(req, res) {
         );
       }
 
-      const savingsRecords = [];
+      // FIX: Only insert savings_add (monthly contribution) into the savings table.
+      // savings_bf is a carried-forward balance, NOT a new savings record.
+      // Including both savings_bf and savings_add produced two rows per member with
+      // the same (member_id, month, year) in the UNNEST array, causing Postgres to
+      // throw "ON CONFLICT DO UPDATE command cannot affect row a second time".
+      // Also deduplicate by member_id in case the same member appears twice in the
+      // data (e.g. from a split CSV row due to an embedded newline in a name cell).
+      const savingsMap = new Map(); // member_id -> [member_id, amount, month, year, description]
       for (let i = 0; i < tMemberIds.length; i++) {
         if (tColKeys[i] === 'savings_add') {
-          savingsRecords.push([
+          savingsMap.set(tMemberIds[i], [
             tMemberIds[i], tAmounts[i], tMonths[i], tYears[i],
             `Monthly Savings - ${m}/${y}`
-          ]);
-        } else if (tColKeys[i] === 'savings_bf') {
-          savingsRecords.push([
-            tMemberIds[i], tAmounts[i], tMonths[i], tYears[i],
-            `Opening Balance - ${m}/${y}`
           ]);
         }
       }
 
-      if (savingsRecords.length > 0) {
-        const savMemberIds = savingsRecords.map(r => r[0]);
-        const savAmounts = savingsRecords.map(r => r[1]);
-        const savMonths = savingsRecords.map(r => r[2]);
-        const savYears = savingsRecords.map(r => r[3]);
+      if (savingsMap.size > 0) {
+        const savingsRecords = [...savingsMap.values()];
+        const savMemberIds   = savingsRecords.map(r => r[0]);
+        const savAmounts     = savingsRecords.map(r => r[1]);
+        const savMonths      = savingsRecords.map(r => r[2]);
+        const savYears       = savingsRecords.map(r => r[3]);
         const savDescriptions = savingsRecords.map(r => r[4]);
         
         await client.query(
