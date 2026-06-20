@@ -3,10 +3,16 @@ import { Link, useLocation } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Pagination from '../components/Pagination';
 import api from '../api';
-import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
-const PAGE_SIZE = 100; // Increased for better performance with large datasets
+const PAGE_SIZE = 100;
+
+// Plain number formatter — no currency symbol
+const fmtNum = (val) =>
+  (parseFloat(val) || 0).toLocaleString('en-NG', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  });
 
 export default function Balances() {
   const toast = useToast();
@@ -20,7 +26,7 @@ export default function Balances() {
   const [dataMonth, setDataMonth] = useState(null);
   const [dataYear,  setDataYear]  = useState(null);
   const [viewMonth, setViewMonth] = useState(null);
-  const [viewYear, setViewYear]   = useState(null);
+  const [viewYear,  setViewYear]  = useState(null);
   const [page, setPage]           = useState(1);
 
   const MONTHS = ['January','February','March','April','May','June',
@@ -48,7 +54,7 @@ export default function Balances() {
   };
 
   const location = useLocation();
-  
+
   useEffect(() => {
     fetchBalances();
   }, []);
@@ -65,20 +71,21 @@ export default function Balances() {
     const q = search.toLowerCase();
     return (
       m.full_name?.toLowerCase().includes(q) ||
-      m.ledger_no?.toLowerCase().includes(q) ||
+      m.ledger_no?.toLowerCase().includes(q)  ||
       m.staff_no?.toLowerCase().includes(q)
     );
   }), [members, search]);
 
-  // Reset page on search change
   useEffect(() => { setPage(1); }, [search]);
 
-  // ── Simple row filtering — no per-member totals needed ──
   const rows = filtered;
 
-  // ── Pagination slice ─────────────────────────────────────────────
+  // ── Pagination ───────────────────────────────────────────────────
   const pageStart = (page - 1) * PAGE_SIZE;
-  const pageRows  = useMemo(() => rows.slice(pageStart, pageStart + PAGE_SIZE), [rows, pageStart]);
+  const pageRows  = useMemo(
+    () => rows.slice(pageStart, pageStart + PAGE_SIZE),
+    [rows, pageStart]
+  );
 
   // ── Column totals ─────────────────────────────────────────────────
   const colTotals = useMemo(() => columns.reduce((acc, col) => {
@@ -86,7 +93,7 @@ export default function Balances() {
     return acc;
   }, {}), [columns, filtered]);
 
-  // ── CSV export (all enabled columns) ─────────────────────────────────────
+  // ── CSV export ────────────────────────────────────────────────────
   const exportCSV = () => {
     const headers = ['S/N', 'Ledger No', 'Staff No', 'Full Name',
       ...columns.map((c) => c.label)];
@@ -108,7 +115,7 @@ export default function Balances() {
     URL.revokeObjectURL(a.href);
   };
 
-  // ── CSV template (only custom columns) ───────────────────────────────────
+  // ── CSV template ──────────────────────────────────────────────────
   const downloadTemplate = () => {
     const customCols = columns.filter((c) => c.type === 'custom');
     if (!customCols.length) {
@@ -126,7 +133,7 @@ export default function Balances() {
     URL.revokeObjectURL(a.href);
   };
 
-  // ── CSV upload (custom columns only) ─────────────────────────────────────
+  // ── CSV upload ────────────────────────────────────────────────────
   const handleUpload = async (e) => {
     const file = e.target.files?.[0];
     if (!file) return;
@@ -141,7 +148,7 @@ export default function Balances() {
     fd.append('file', file);
     try {
       const r = await api.post('/balances/upload', fd);
-      
+
       const hasErrors = r.data.errors?.length > 0;
       const parts = [];
       if (r.data.imported > 0) {
@@ -153,15 +160,13 @@ export default function Balances() {
       if (parts.length === 0) {
         toast('No records processed', 'info');
       } else {
-        const message = parts.join(', ');
-        toast(message + (hasErrors ? ' (see errors below)' : ''), hasErrors ? 'warning' : 'success');
+        toast(parts.join(', ') + (hasErrors ? ' (see errors below)' : ''), hasErrors ? 'warning' : 'success');
       }
-      
+
       if (hasErrors) {
-        const errorMsg = r.data.errors.slice(0, 5).join('\n');
-        toast(errorMsg, 'error');
+        toast(r.data.errors.slice(0, 5).join('\n'), 'error');
       }
-      
+
       setTimeout(() => fetchBalances(), 500);
     } catch (err) {
       toast(err.response?.data?.error || 'Upload failed', 'error');
@@ -171,13 +176,13 @@ export default function Balances() {
     }
   };
 
-  const customColCount = columns.filter((c) => c.type === 'custom').length;
+  const customColCount  = columns.filter((c) => c.type === 'custom').length;
   const hasSelectedMonth = Boolean(viewMonth && viewYear);
   const missingSelectedData = hasSelectedMonth && (!dataMonth || !dataYear);
 
   return (
     <Layout title="Member Balances">
-      {/* ── Header ─────────────────────────────────────────────────────── */}
+      {/* ── Header ──────────────────────────────────────────────────── */}
       <div className="page-header">
         <div>
           <div className="page-eyebrow">Reports</div>
@@ -198,20 +203,13 @@ export default function Balances() {
             type="number"
             style={{ width: 90 }}
             value={viewYear || ''}
-            onChange={(e) => {
-              const val = e.target.value;
-              setViewYear(val ? Number(val) : null);
-            }}
+            onChange={(e) => setViewYear(e.target.value ? Number(e.target.value) : null)}
             min="2000" max="2100"
             placeholder="Year"
           />
           <button
             className="btn btn-secondary"
-            onClick={() => {
-              setViewMonth(null);
-              setViewYear(null);
-              fetchBalances();
-            }}
+            onClick={() => { setViewMonth(null); setViewYear(null); fetchBalances(); }}
             disabled={loading}
           >
             Latest
@@ -239,7 +237,7 @@ export default function Balances() {
         </div>
       </div>
 
-      {/* ── Info banner ─────────────────────────────────────────────────── */}
+      {/* ── Info banner ──────────────────────────────────────────────── */}
       {dataMonth && dataYear && (
         <div style={{
           background: 'rgba(200,168,75,.06)', border: '1px solid rgba(200,168,75,.2)',
@@ -266,13 +264,13 @@ export default function Balances() {
         {customColCount > 0 && (
           <span>
             You have <strong>{customColCount}</strong> custom column{customColCount > 1 ? 's' : ''}.
-            Manage columns in{' '}
+            Manage in{' '}
             <Link to="/settings" style={{ color: 'var(--gold)' }}>Settings</Link>.
           </span>
         )}
       </div>
 
-      {/* ── Table ───────────────────────────────────────────────────────── */}
+      {/* ── Table ────────────────────────────────────────────────────── */}
       <div className="card" style={{ padding: 0 }}>
         <div style={{
           padding: '14px 20px',
@@ -302,7 +300,9 @@ export default function Balances() {
                   <th
                     key={col.key}
                     style={{ minWidth: 130, textAlign: 'right' }}
-                    title={col.type === 'custom' ? 'Custom column — editable via CSV upload' : 'Computed from transactions'}
+                    title={col.type === 'custom'
+                      ? 'Custom column — editable via CSV upload'
+                      : 'Computed from transactions'}
                   >
                     {col.label}
                     {col.type === 'custom' && (
@@ -331,14 +331,17 @@ export default function Balances() {
                   <tr key={m.id}>
                     <td style={{ color: 'var(--muted)', fontSize: 12 }}>{pageStart + i + 1}</td>
                     <td>
-                      <Link to={`/ledger/${m.id}`} style={{ color: 'var(--gold)', textDecoration: 'none', fontFamily: 'var(--mono)', fontSize: 12 }}>
+                      <Link
+                        to={`/ledger/${m.id}`}
+                        style={{ color: 'var(--gold)', textDecoration: 'none', fontFamily: 'var(--mono)', fontSize: 12 }}
+                      >
                         {m.ledger_no}
                       </Link>
                     </td>
                     <td>{m.full_name}</td>
                     {columns.map((col) => (
                       <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
-                        {fmtNGN(m[col.key] || 0)}
+                        {fmtNum(m[col.key] || 0)}
                       </td>
                     ))}
                   </tr>
@@ -352,7 +355,7 @@ export default function Balances() {
                   <td colSpan={3} style={{ textAlign: 'right', letterSpacing: 1, fontSize: 11 }}>TOTALS</td>
                   {columns.map((col) => (
                     <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
-                      {fmtNGN(colTotals[col.key] || 0)}
+                      {fmtNum(colTotals[col.key] || 0)}
                     </td>
                   ))}
                 </tr>
@@ -360,7 +363,13 @@ export default function Balances() {
             )}
           </table>
         </div>
-        <Pagination page={page} pageSize={PAGE_SIZE} total={rows.length} onChange={(p) => { setPage(p); window.scrollTo(0,0); }} />
+
+        <Pagination
+          page={page}
+          pageSize={PAGE_SIZE}
+          total={rows.length}
+          onChange={(p) => { setPage(p); window.scrollTo(0, 0); }}
+        />
       </div>
 
       {customColCount > 0 && (
