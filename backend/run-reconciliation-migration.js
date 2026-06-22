@@ -1,3 +1,4 @@
+require('dotenv').config(); 
 const db = require('./src/db');
 const fs = require('fs');
 const path = require('path');
