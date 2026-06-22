@@ -1191,6 +1191,64 @@ async function patchMonthEntry(req, res) {
       `, [member_id, key, amount, m, y]);
     }
 
+    // Propagate changes to subsequent months
+    let currM = m;
+    let currY = y;
+    let currData = finalData;
+
+    while (true) {
+      let nextM = currM + 1;
+      let nextY = currY;
+      if (nextM > 12) {
+        nextM = 1;
+        nextY++;
+      }
+
+      // Check if next month exists
+      const nextExisting = await client.query(
+        'SELECT column_key, amount FROM monthly_trans WHERE member_id=$1 AND month=$2 AND year=$3',
+        [member_id, nextM, nextY]
+      );
+
+      if (nextExisting.rows.length === 0) {
+        break; // No more months to propagate to
+      }
+
+      const nextData = {};
+      for (const r of nextExisting.rows) nextData[r.column_key] = parseFloat(r.amount) || 0;
+
+      // Update B/F values from current month's C/F values
+      nextData['savings_bf'] = currData.savings_cf;
+      nextData['loan_bal_bf'] = currData.loan_ledger_bal;
+      nextData['loan_int_bf'] = currData.loan_int_cf;
+      nextData['comm_bal_bf'] = currData.comm_bal_cf;
+
+      // Recalculate C/F values for the next month
+      const gNext = (k) => nextData[k] || 0;
+      
+      const savings_cf_next = Math.max(0, gNext('savings_bf') + gNext('savings_add') + gNext('savings_add_bank') - gNext('savings_withdrawal'));
+      const loan_ledger_bal_next = Math.max(0, gNext('loan_bal_bf') + gNext('loan_granted') - gNext('loan_repayment') - gNext('loan_repayment_bank'));
+      const loan_int_cf_next = Math.max(0, gNext('loan_int_bf') + gNext('loan_int_charged') - gNext('loan_int_paid') - gNext('loan_int_paid_bank'));
+      const comm_bal_cf_next = Math.max(0, gNext('comm_bal_bf') + gNext('comm_add') - gNext('comm_repayment') - gNext('comm_repayment_bank'));
+
+      nextData['savings_cf'] = savings_cf_next;
+      nextData['loan_ledger_bal'] = loan_ledger_bal_next;
+      nextData['loan_int_cf'] = loan_int_cf_next;
+      nextData['comm_bal_cf'] = comm_bal_cf_next;
+
+      // Save updated next month
+      for (const key of ['savings_bf', 'loan_bal_bf', 'loan_int_bf', 'comm_bal_bf', 'savings_cf', 'loan_ledger_bal', 'loan_int_cf', 'comm_bal_cf']) {
+        await client.query(`
+          UPDATE monthly_trans SET amount = $1, updated_at = NOW()
+          WHERE member_id = $2 AND column_key = $3 AND month = $4 AND year = $5
+        `, [nextData[key], member_id, key, nextM, nextY]);
+      }
+
+      currM = nextM;
+      currY = nextY;
+      currData = nextData;
+    }
+
     await client.query('COMMIT');
     const newKeyMap = {
       savings_bank: finalData.savings_add_bank, savings: finalData.savings_add,
@@ -1198,7 +1256,7 @@ async function patchMonthEntry(req, res) {
       loan_interest: finalData.loan_int_paid, commodity_repayment: finalData.comm_repayment,
       membership_loan_form: finalData.form, other_charges: finalData.other_charges,
     };
-    res.json({ message: 'Entry updated and recalculated (Nigerian Naira ₦)', data: { ...finalData, ...newKeyMap } });
+    res.json({ message: 'Entry updated and recalculations carried forward (Nigerian Naira ₦)', data: { ...finalData, ...newKeyMap } });
   } catch (err) {
     await client.query('ROLLBACK');
     res.status(500).json({ error: err.message });

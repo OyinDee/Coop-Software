@@ -1196,7 +1196,7 @@ async function getMemberLedger(req, res) {
         comm_repayment_bank: g(d, 'comm_repayment_bank'),
         form:                g(d, 'form'),
         other_charges:       g(d, 'other_charges'),
-        total_deduction:     g(d, 'total_deduction'),
+        total_deduction:     g(d, 'total_deduction') || (g(d, 'savings_add') + g(d, 'savings_add_bank') + g(d, 'loan_repayment') + g(d, 'loan_repayment_bank') + g(d, 'loan_int_paid') + g(d, 'loan_int_paid_bank') + g(d, 'comm_repayment') + g(d, 'comm_repayment_bank') + g(d, 'form') + g(d, 'other_charges')),
         savings_cf:          g(d, 'savings_cf'),
         loan_ledger_bal:     g(d, 'loan_ledger_bal'),
         loan_int_cf:         g(d, 'loan_int_cf'),
