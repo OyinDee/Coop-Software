@@ -121,21 +121,21 @@ async function getMonthlyReport(req, res) {
         LEFT JOIN savings s ON s.member_id = mem.id AND s.month = $1 AND s.year = $2
         -- Include all members (active and deactivated) to show their savings
       `, [m, y]),
-      // Loans: active loans within their scheduled term, smart-capped on final month
+      // Loans: active loans within their scheduled term, matching the row-level calculation
       db.query(`
         SELECT
           COALESCE(SUM(
             CASE
-              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
-                THEN GREATEST(l.principal - (l.months - 1) * l.monthly_principal, 0)
-              ELSE l.monthly_principal
+              WHEN l.months_remaining > 0
+                THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
+              ELSE 0
             END
           ), 0) AS principal,
           COALESCE(SUM(
             CASE
-              WHEN ($2 * 12 + $1) = (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months - 1)
-                THEN GREATEST(l.total_interest - (l.months - 1) * l.monthly_interest, 0)
-              ELSE l.monthly_interest
+              WHEN l.months_remaining > 0
+                THEN ROUND((l.total_interest - l.interest_paid) / GREATEST(1, l.months_remaining)::numeric, 2)
+              ELSE 0
             END
           ), 0) AS interest
         FROM loans l
