@@ -463,12 +463,12 @@ async function getMembers(req, res) {
         ) l ON l.member_id = m.id
         WHERE m.is_active = TRUE 
           AND (
-            to_tsvector('english', m.full_name) @@ plainto_tsquery($1)
+            m.full_name ILIKE $1
             OR m.ledger_no ILIKE $1
             OR m.staff_no ILIKE $1
             OR m.department ILIKE $1
           )
-        ORDER BY m.ledger_no
+        ORDER BY NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
         LIMIT $2 OFFSET $3
       `;
       params = [`%${search}%`, limit, offset];
@@ -496,7 +496,7 @@ async function getMembers(req, res) {
           GROUP BY member_id
         ) l ON l.member_id = m.id
         WHERE m.is_active = TRUE
-        ORDER BY m.ledger_no
+        ORDER BY NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
         LIMIT $1 OFFSET $2
       `;
       params = [limit, offset];
@@ -505,7 +505,7 @@ async function getMembers(req, res) {
     // Get total count efficiently for pagination
     const countQuery = search 
       ? `SELECT COUNT(*) FROM members WHERE is_active = TRUE AND (
-           to_tsvector('english', full_name) @@ plainto_tsquery($1)
+           full_name ILIKE $1
            OR ledger_no ILIKE $1
            OR staff_no ILIKE $1
            OR department ILIKE $1

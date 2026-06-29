@@ -39,7 +39,7 @@ async function getTransactions(req, res) {
           c.amount,
           0
         ) AS commodity,
-        // Loan principal: calculated using diminishing balance method (remaining_balance / months_remaining)
+        -- Loan principal: calculated using diminishing balance method (remaining_balance / months_remaining)
         COALESCE((
           SELECT SUM(
             CASE

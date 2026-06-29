@@ -570,13 +570,29 @@ export default function Deductions() {
         </div>
       </div>
 
-      {/* Month banner */}
+      {/* Month banner and Totals */}
       <div style={{
         background: 'rgba(200,168,75,.06)', border: '1px solid rgba(200,168,75,.2)',
         borderRadius: 4, padding: '10px 18px', marginBottom: 14,
-        fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--gold)', letterSpacing: 1,
+        display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '12px'
       }}>
-        {MONTHS[month - 1].toUpperCase()} {year}
+        <div style={{ fontFamily: 'var(--mono)', fontSize: 11, color: 'var(--gold)', letterSpacing: 1 }}>
+          {MONTHS[month - 1].toUpperCase()} {year}
+        </div>
+        <div style={{ display: 'flex', gap: 24, fontSize: 13, fontWeight: 600 }}>
+          <div>
+            Total Deducted: <span style={{ fontFamily: 'var(--mono)', color: 'var(--gold)' }}>
+              {fmtNGN(members.reduce((s, m) => s + rowTotal(m), 0))}
+            </span>
+          </div>
+          {reconciliationData && (
+            <div>
+              Actual Deducted: <span style={{ fontFamily: 'var(--mono)', color: 'var(--success)' }}>
+                {fmtNGN(members.reduce((s, m) => s + (getActualDeducted(m) || 0), 0))}
+              </span>
+            </div>
+          )}
+        </div>
       </div>
 
       {/* Reconciliation status banner */}

@@ -83,16 +83,16 @@ async function getBalances(req, res) {
 
         -- Loan principal repayment this month (cash)
         COALESCE((
-          SELECT SUM(lr.principal_paid) FROM loan_repayments lr
-          WHERE lr.member_id = m.id AND lr.month = $1 AND lr.year = $2
-            AND COALESCE(lr.via_bank, false) = false
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_repayment' LIMIT 1
         ), 0) AS loan_repayment,
 
         -- Loan principal repayment this month (bank)
         COALESCE((
-          SELECT SUM(lr.principal_paid) FROM loan_repayments lr
-          WHERE lr.member_id = m.id AND lr.month = $1 AND lr.year = $2
-            AND COALESCE(lr.via_bank, false) = true
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_repayment_bank' LIMIT 1
         ), 0) AS loan_repayment_bank,
 
         -- Loan Ledger Balance C/F
@@ -135,16 +135,16 @@ async function getBalances(req, res) {
 
         -- Interest paid this month (cash)
         COALESCE((
-          SELECT SUM(lr.interest_paid) FROM loan_repayments lr
-          WHERE lr.member_id = m.id AND lr.month = $1 AND lr.year = $2
-            AND COALESCE(lr.via_bank, false) = false
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_int_paid' LIMIT 1
         ), 0) AS loan_int_paid,
 
         -- Interest paid this month (bank)
         COALESCE((
-          SELECT SUM(lr.interest_paid) FROM loan_repayments lr
-          WHERE lr.member_id = m.id AND lr.month = $1 AND lr.year = $2
-            AND COALESCE(lr.via_bank, false) = true
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_int_paid_bank' LIMIT 1
         ), 0) AS loan_int_paid_bank,
 
         -- Interest Balance C/F
