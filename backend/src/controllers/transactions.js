@@ -72,7 +72,7 @@ async function getTransactions(req, res) {
       LEFT JOIN shares   sh ON sh.member_id = m.id AND sh.month = $1 AND sh.year = $2
       LEFT JOIN commodity c ON c.member_id  = m.id AND c.month  = $1 AND c.year = $2
       -- Include all members (active and deactivated) to show their transactions
-      ORDER BY m.ledger_no
+      ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
     `, [m, y]);
 
     res.json({ transactions: result.rows, month: m, year: y });

@@ -801,7 +801,7 @@ async function getDeductions(req, res) {
       LEFT JOIN monthly_trans mt_form ON mt_form.member_id = m.id AND mt_form.column_key = 'form' AND mt_form.month = $1 AND mt_form.year = $2
       LEFT JOIN monthly_trans mt_other ON mt_other.member_id = m.id AND mt_other.column_key = 'other_charges' AND mt_other.month = $1 AND mt_other.year = $2
       WHERE m.is_active = TRUE
-      ORDER BY m.ledger_no
+      ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
     `, [m, y]);
 
     const hasData = membersResult.rows.some(row => 

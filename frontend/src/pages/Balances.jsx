@@ -41,6 +41,7 @@ export default function Balances() {
   const [viewMonth, setViewMonth] = useState(null);
   const [viewYear,  setViewYear]  = useState(null);
   const [page,      setPage]      = useState(1);
+  const [showBasicOnly, setShowBasicOnly] = useState(false);
 
   const MONTHS = ['January','February','March','April','May','June',
     'July','August','September','October','November','December'];
@@ -94,16 +95,28 @@ export default function Balances() {
     return acc;
   }, {}), [columns, filtered]);
 
-  const columnGroups = useMemo(() => groupColumns(columns), [columns]);
+  const BASIC_KEYS = new Set([
+    'savings_bf', 'net_savings_cf',
+    'loan_bal_bf', 'loan_ledger_bal',
+    'loan_int_bf', 'loan_int_cf',
+    'comm_bal_bf', 'comm_bal_cf'
+  ]);
+
+  const visibleColumns = useMemo(() => {
+    if (!showBasicOnly) return columns;
+    return columns.filter(c => BASIC_KEYS.has(c.key));
+  }, [columns, showBasicOnly]);
+
+  const columnGroups = useMemo(() => groupColumns(visibleColumns), [visibleColumns]);
 
   // ── CSV export ────────────────────────────────────────────────────
   const exportCSV = () => {
-    const headers = ['S/N', 'Ledger No', 'Staff No', 'Full Name', ...columns.map(c => c.label)];
+    const headers = ['S/N', 'Ledger No', 'Staff No', 'Full Name', ...visibleColumns.map(c => c.label)];
     const body = filtered.map((m, i) => [
       i + 1, m.ledger_no, m.staff_no || '', `"${m.full_name}"`,
-      ...columns.map(c => (parseFloat(m[c.key]) || 0).toFixed(2)),
+      ...visibleColumns.map(c => (parseFloat(m[c.key]) || 0).toFixed(2)),
     ]);
-    body.push(['', '', '', 'TOTAL', ...columns.map(c => (colTotals[c.key] || 0).toFixed(2))]);
+    body.push(['', '', '', 'TOTAL', ...visibleColumns.map(c => (colTotals[c.key] || 0).toFixed(2))]);
     const csv = [headers, ...body].map(r => r.join(',')).join('\n');
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8' });
     const a = document.createElement('a');
@@ -196,6 +209,15 @@ export default function Balances() {
             <input ref={fileRef} type="file" accept=".csv" style={{ display: 'none' }} onChange={handleUpload} disabled={uploading} />
           </label>
           <button className="btn btn-primary" onClick={exportCSV} disabled={loading}>Export CSV</button>
+          
+          <label style={{ display: 'flex', alignItems: 'center', gap: 6, fontSize: 13, cursor: 'pointer', marginLeft: 'auto' }}>
+            <input 
+              type="checkbox" 
+              checked={showBasicOnly} 
+              onChange={(e) => setShowBasicOnly(e.target.checked)} 
+            />
+            Basic View Only
+          </label>
         </div>
       </div>
 
@@ -251,7 +273,7 @@ export default function Balances() {
                 <th style={{ minWidth: 40 }}>#</th>
                 <th style={{ minWidth: 110 }}>Ledger No</th>
                 <th style={{ minWidth: 200 }}>Full Name</th>
-                {columns.map(col => (
+                {visibleColumns.map(col => (
                   <th
                     key={col.key}
                     style={{ minWidth: 130, textAlign: 'right' }}
@@ -268,9 +290,9 @@ export default function Balances() {
 
             <tbody>
               {loading ? (
-                <tr><td colSpan={columns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>Loading…</td></tr>
+                <tr><td colSpan={visibleColumns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>Loading…</td></tr>
               ) : filtered.length === 0 ? (
-                <tr><td colSpan={columns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
+                <tr><td colSpan={visibleColumns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                   {search ? 'No members match your search.' : 'No members found.'}
                 </td></tr>
               ) : (
@@ -283,7 +305,7 @@ export default function Balances() {
                       </Link>
                     </td>
                     <td>{m.full_name}</td>
-                    {columns.map(col => (
+                    {visibleColumns.map(col => (
                       <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)', fontSize: 13 }}>
                         {fmtNum(m[col.key] || 0)}
                       </td>
@@ -297,7 +319,7 @@ export default function Balances() {
               <tfoot>
                 <tr style={{ fontWeight: 700, borderTop: '2px solid var(--border)' }}>
                   <td colSpan={3} style={{ textAlign: 'right', letterSpacing: 1, fontSize: 11 }}>TOTALS</td>
-                  {columns.map(col => (
+                  {visibleColumns.map(col => (
                     <td key={col.key} style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
                       {fmtNum(colTotals[col.key] || 0)}
                     </td>

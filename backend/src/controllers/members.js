@@ -468,7 +468,7 @@ async function getMembers(req, res) {
             OR m.staff_no ILIKE $1
             OR m.department ILIKE $1
           )
-        ORDER BY NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
+        ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
         LIMIT $2 OFFSET $3
       `;
       params = [`%${search}%`, limit, offset];
@@ -496,7 +496,7 @@ async function getMembers(req, res) {
           GROUP BY member_id
         ) l ON l.member_id = m.id
         WHERE m.is_active = TRUE
-        ORDER BY NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
+        ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
         LIMIT $1 OFFSET $2
       `;
       params = [limit, offset];

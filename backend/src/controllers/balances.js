@@ -277,7 +277,7 @@ async function getBalances(req, res) {
       FROM members m
       LEFT JOIN savings   s  ON s.member_id  = m.id AND s.month  = $1 AND s.year  = $2
       LEFT JOIN commodity c  ON c.member_id  = m.id AND c.month  = $1 AND c.year  = $2
-      ORDER BY m.ledger_no
+      ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
     `, [m, y]);
 
     // Column definitions matching the CSV layout
