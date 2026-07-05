@@ -63,6 +63,92 @@ async function loadMonthlyValues(memberId, month, year) {
   return values;
 }
 
+function buildLedgerRows({ byMonth, sharesMap, sharesBF }) {
+  const months = Array.from({ length: 12 }, (_, i) => i + 1);
+  const firstDataMonth = months.find((month) => byMonth[month]);
+  const firstData = firstDataMonth ? (byMonth[firstDataMonth] || {}) : {};
+
+  const bf = {
+    savings_bf: toNumber(firstData.savings_bf || 0),
+    savings_bank_bf: toNumber(firstData.savings_bank_bf || 0),
+    shares_bf: sharesBF,
+    loan_bal_bf: toNumber(firstData.loan_bal_bf || 0),
+    loan_int_bf: toNumber(firstData.loan_int_bf || 0),
+    comm_bal_bf: toNumber(firstData.comm_bal_bf || 0),
+  };
+
+  let savingsCarry = bf.savings_bf;
+  let loanCarry = bf.loan_bal_bf;
+  let interestCarry = bf.loan_int_bf;
+  let commodityCarry = bf.comm_bal_bf;
+
+  const rows = months.map((month) => {
+    const data = byMonth[month] || {};
+    const savings_withdrawal = toNumber(data.savings_withdrawal);
+    const savings_add = toNumber(data.savings_add);
+    const savings_add_bank = toNumber(data.savings_add_bank);
+    const shares = toNumber(sharesMap[month]);
+    const loan_granted = toNumber(data.loan_granted);
+    const loan_int_charged = toNumber(data.loan_int_charged);
+    const loan_repayment = toNumber(data.loan_repayment);
+    const loan_repayment_bank = toNumber(data.loan_repayment_bank);
+    const loan_int_paid = toNumber(data.loan_int_paid);
+    const loan_int_paid_bank = toNumber(data.loan_int_paid_bank);
+    const comm_add = toNumber(data.comm_add);
+    const comm_repayment = toNumber(data.comm_repayment);
+    const comm_repayment_bank = toNumber(data.comm_repayment_bank);
+    const form = toNumber(data.form);
+    const other_charges = toNumber(data.other_charges);
+
+    savingsCarry = Math.max(0, savingsCarry + savings_add + savings_add_bank - savings_withdrawal);
+    loanCarry = Math.max(0, loanCarry + loan_granted - loan_repayment - loan_repayment_bank);
+    interestCarry = Math.max(0, interestCarry + loan_int_charged - loan_int_paid - loan_int_paid_bank);
+    commodityCarry = Math.max(0, commodityCarry + comm_add - comm_repayment - comm_repayment_bank);
+
+    return {
+      month,
+      has_data: !!(byMonth[month] || sharesMap[month]),
+      savings_withdrawal,
+      savings_add,
+      savings_add_bank,
+      shares,
+      shares_bank: 0,
+      loan_granted,
+      loan_int_charged,
+      loan_repayment,
+      loan_repayment_bank,
+      loan_int_paid,
+      loan_int_paid_bank,
+      comm_add,
+      comm_repayment,
+      comm_repayment_bank,
+      form,
+      other_charges,
+      total_deduction: savings_add + savings_add_bank + loan_repayment + loan_repayment_bank + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank + form + other_charges,
+      savings_cf: savingsCarry,
+      loan_ledger_bal: loanCarry,
+      loan_int_cf: interestCarry,
+      comm_bal_cf: commodityCarry,
+    };
+  });
+
+  const summary = rows.reduce((acc, row) => ({
+    net_savings: row.savings_cf,
+    loan_bal: row.loan_ledger_bal,
+    int_to_pay: row.loan_int_cf,
+    balance: row.comm_bal_cf,
+    total_shares: acc.total_shares + row.shares,
+  }), {
+    net_savings: bf.savings_bf,
+    loan_bal: bf.loan_bal_bf,
+    int_to_pay: bf.loan_int_bf,
+    balance: bf.comm_bal_bf,
+    total_shares: bf.shares_bf,
+  });
+
+  return { bf, rows, summary };
+}
+
 function buildMonthlyReportDocument({ member, month, year, current, previous }) {
   const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
   // Inline logo if available to avoid duplicate displayed attachments in email clients
@@ -336,42 +422,86 @@ async function getMonthlyReport(memberId, month, year) {
     return null;
   }
 
-  const previous = getPreviousMonthYear(month, year);
-  const [currentValues, previousValues] = await Promise.all([
-    loadMonthlyValues(memberId, month, year),
-    loadMonthlyValues(memberId, previous.month, previous.year),
-  ]);
+  const targetMonth = parseInt(month, 10) || new Date().getMonth() + 1;
+  const targetYear = parseInt(year, 10) || new Date().getFullYear();
+  const transRes = await db.query(
+    `SELECT month, column_key, amount FROM monthly_trans
+     WHERE member_id=$1 AND year=$2 AND month <= $3 ORDER BY month`,
+    [memberId, targetYear, targetMonth]
+  );
+
+  const byMonth = {};
+  for (const row of transRes.rows) {
+    if (!byMonth[row.month]) byMonth[row.month] = {};
+    byMonth[row.month][row.column_key] = parseFloat(row.amount) || 0;
+  }
+
+  const ledger = buildLedgerRows({ byMonth, sharesMap: {}, sharesBF: 0 });
+  const currentRow = ledger.rows[targetMonth - 1] || {
+    savings_withdrawal: 0,
+    savings_add: 0,
+    savings_add_bank: 0,
+    loan_granted: 0,
+    loan_int_charged: 0,
+    loan_repayment: 0,
+    loan_repayment_bank: 0,
+    loan_int_paid: 0,
+    loan_int_paid_bank: 0,
+    comm_add: 0,
+    comm_repayment: 0,
+    comm_repayment_bank: 0,
+    form: 0,
+    other_charges: 0,
+    total_deduction: 0,
+    savings_cf: ledger.bf.savings_bf,
+    loan_ledger_bal: ledger.bf.loan_bal_bf,
+    loan_int_cf: ledger.bf.loan_int_bf,
+    comm_bal_cf: ledger.bf.comm_bal_bf,
+  };
+  const previousRow = targetMonth > 1
+    ? (ledger.rows[targetMonth - 2] || {
+        savings_cf: ledger.bf.savings_bf,
+        loan_ledger_bal: ledger.bf.loan_bal_bf,
+        loan_int_cf: ledger.bf.loan_int_bf,
+        comm_bal_cf: ledger.bf.comm_bal_bf,
+      })
+    : {
+        savings_cf: ledger.bf.savings_bf,
+        loan_ledger_bal: ledger.bf.loan_bal_bf,
+        loan_int_cf: ledger.bf.loan_int_bf,
+        comm_bal_cf: ledger.bf.comm_bal_bf,
+      };
 
   const report = {
-    savings_withdrawal: currentValues.savings_withdrawal || 0,
-    savings_add: currentValues.savings_add || 0,
-    savings_add_bank: currentValues.savings_add_bank || 0,
-    loan_granted: currentValues.loan_granted || 0,
-    loan_int_charged: currentValues.loan_int_charged || 0,
-    loan_repayment: currentValues.loan_repayment || 0,
-    loan_repayment_bank: currentValues.loan_repayment_bank || 0,
-    loan_int_paid: currentValues.loan_int_paid || 0,
-    loan_int_paid_bank: currentValues.loan_int_paid_bank || 0,
-    comm_add: currentValues.comm_add || 0,
-    comm_repayment: currentValues.comm_repayment || 0,
-    comm_repayment_bank: currentValues.comm_repayment_bank || 0,
-    form: currentValues.form || 0,
-    other_charges: currentValues.other_charges || 0,
-    total_deduction: currentValues.total_deduction || 0,
-    savings_cf: currentValues.savings_cf || 0,
-    loan_ledger_bal: currentValues.loan_ledger_bal || 0,
-    loan_int_cf: Math.max(0, toNumber(previousValues.loan_int_cf || 0) + toNumber(currentValues.loan_int_charged || 0) - toNumber(currentValues.loan_int_paid || 0) - toNumber(currentValues.loan_int_paid_bank || 0)),
-    comm_bal_cf: currentValues.comm_bal_cf || 0,
+    savings_withdrawal: currentRow.savings_withdrawal || 0,
+    savings_add: currentRow.savings_add || 0,
+    savings_add_bank: currentRow.savings_add_bank || 0,
+    loan_granted: currentRow.loan_granted || 0,
+    loan_int_charged: currentRow.loan_int_charged || 0,
+    loan_repayment: currentRow.loan_repayment || 0,
+    loan_repayment_bank: currentRow.loan_repayment_bank || 0,
+    loan_int_paid: currentRow.loan_int_paid || 0,
+    loan_int_paid_bank: currentRow.loan_int_paid_bank || 0,
+    comm_add: currentRow.comm_add || 0,
+    comm_repayment: currentRow.comm_repayment || 0,
+    comm_repayment_bank: currentRow.comm_repayment_bank || 0,
+    form: currentRow.form || 0,
+    other_charges: currentRow.other_charges || 0,
+    total_deduction: currentRow.total_deduction || 0,
+    savings_cf: currentRow.savings_cf || 0,
+    loan_ledger_bal: currentRow.loan_ledger_bal || 0,
+    loan_int_cf: currentRow.loan_int_cf || 0,
+    comm_bal_cf: currentRow.comm_bal_cf || 0,
   };
 
   const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
   const subject = `Transaction for the Month of ${subjectPeriod}`;
   const html = buildMonthlyReportDocument({
     member,
-    month,
-    year,
+    month: targetMonth,
+    year: targetYear,
     current: report,
-    previous: previousValues,
+    previous: previousRow,
   });
 
   const text = [
@@ -390,7 +520,7 @@ async function getMonthlyReport(memberId, month, year) {
     subject,
     text,
     html,
-    attachmentName: `${member.ledger_no || member.id}-monthly-report-${year}-${String(month).padStart(2, '0')}.html`,
+    attachmentName: `${member.ledger_no || member.id}-monthly-report-${targetYear}-${String(targetMonth).padStart(2, '0')}.html`,
     attachmentContent: html,
   };
 }
@@ -1163,55 +1293,7 @@ async function getMemberLedger(req, res) {
     );
     const sharesBF = parseFloat(sharesBFRes.rows[0].total) || 0;
 
-    const months = Object.keys(byMonth).map(Number).sort((a, b) => a - b);
-    const firstData = months.length ? (byMonth[months[0]] || {}) : {};
-    const bf = {
-      savings_bf:  firstData.savings_bf   || 0,
-      savings_bank_bf: 0,
-      shares_bf:   sharesBF,
-      loan_bal_bf: firstData.loan_bal_bf  || 0,
-      loan_int_bf: firstData.loan_int_bf  || 0,
-      comm_bal_bf: firstData.comm_bal_bf  || 0,
-    };
-
-    const g = (d, k) => (d ? d[k] || 0 : 0);
-    const rows = [];
-    for (let m = 1; m <= 12; m++) {
-      const d = byMonth[m] || null;
-      rows.push({
-        month: m,
-        has_data: !!(d || sharesMap[m]),
-        savings_withdrawal:  g(d, 'savings_withdrawal'),
-        savings_add:         g(d, 'savings_add'),
-        savings_add_bank:    g(d, 'savings_add_bank'),
-        shares:              sharesMap[m] || 0,
-        shares_bank:         0,
-        loan_granted:        g(d, 'loan_granted'),
-        loan_int_charged:    g(d, 'loan_int_charged'),
-        loan_repayment:      g(d, 'loan_repayment'),
-        loan_repayment_bank: g(d, 'loan_repayment_bank'),
-        loan_int_paid:       g(d, 'loan_int_paid'),
-        comm_add:            g(d, 'comm_add'),
-        comm_repayment:      g(d, 'comm_repayment'),
-        comm_repayment_bank: g(d, 'comm_repayment_bank'),
-        form:                g(d, 'form'),
-        other_charges:       g(d, 'other_charges'),
-        total_deduction:     g(d, 'total_deduction') || (g(d, 'savings_add') + g(d, 'savings_add_bank') + g(d, 'loan_repayment') + g(d, 'loan_repayment_bank') + g(d, 'loan_int_paid') + g(d, 'loan_int_paid_bank') + g(d, 'comm_repayment') + g(d, 'comm_repayment_bank') + g(d, 'form') + g(d, 'other_charges')),
-        savings_cf:          g(d, 'savings_cf'),
-        loan_ledger_bal:     g(d, 'loan_ledger_bal'),
-        loan_int_cf:         g(d, 'loan_int_cf'),
-        comm_bal_cf:         g(d, 'comm_bal_cf'),
-      });
-    }
-
-    const lastData = months.length ? (byMonth[months[months.length - 1]] || {}) : {};
-    const summary = {
-      net_savings:  lastData.savings_cf      || 0,
-      loan_bal:     lastData.loan_ledger_bal || 0,
-      int_to_pay:   lastData.loan_int_cf     || 0,
-      balance:      lastData.comm_bal_cf     || 0,
-      total_shares: sharesBF + rows.reduce((s, r) => s + r.shares, 0),
-    };
+    const ledger = buildLedgerRows({ byMonth, sharesMap, sharesBF });
 
     const yearsRes = await db.query(
       `SELECT DISTINCT year FROM monthly_trans WHERE member_id=$1
@@ -1221,7 +1303,7 @@ async function getMemberLedger(req, res) {
     );
     const availableYears = yearsRes.rows.map((r) => r.year);
 
-    res.json({ rows, bf, summary, year, availableYears });
+    res.json({ rows: ledger.rows, bf: ledger.bf, summary: ledger.summary, year, availableYears });
   } catch (err) {
     res.status(500).json({ error: err.message });
   }
