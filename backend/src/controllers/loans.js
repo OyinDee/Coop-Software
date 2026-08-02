@@ -1,4 +1,5 @@
 const db = require('../db');
+const { propagateMemberBalances } = require('../utils/propagateBalances');
 
 // Helper: recalculate loan_ledger_bal and loan_int_cf from existing monthly_trans values
 async function recalcLoanTrans(client, member_id, month, year) {
@@ -152,6 +153,9 @@ async function createLoan(req, res) {
 
     // Recalculate loan_ledger_bal and loan_int_cf for the issued month
     await recalcLoanTrans(client, member_id, issuedMonth, issuedYear);
+
+    // Propagate running balances forward from the issued month through all subsequent months
+    await propagateMemberBalances(client, member_id, issuedMonth, issuedYear);
 
     await client.query('COMMIT');
     res.status(201).json({ loan: result.rows[0] });

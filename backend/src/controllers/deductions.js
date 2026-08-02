@@ -1,5 +1,6 @@
 const db = require('../db');
 const { parse } = require('csv-parse/sync');
+const { propagateMemberBalances } = require('../utils/propagateBalances');
 
 // Headers that identify the member — not stored as financial data
 const IDENTITY_HEADERS = new Set([
@@ -750,6 +751,12 @@ async function uploadTransCSV(req, res) {
           [row.id]
         );
         deactivatedMembers.push(`${row.ledger_no} (${row.full_name})`);
+      }
+
+      // Propagate running balances forward for all affected members
+      const affectedMemberIds = [...new Set(dMemberIds)];
+      for (const memberId of affectedMemberIds) {
+        await propagateMemberBalances(client, memberId, m, y);
       }
 
       await client.query('COMMIT');
