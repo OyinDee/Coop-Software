@@ -9,7 +9,7 @@ async function getDashboard(req, res) {
         FROM (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'savings_cf' 
+          WHERE column_key IN ('savings_cf', 'savings_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) latest_savings
       `),
@@ -18,7 +18,7 @@ async function getDashboard(req, res) {
         FROM (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'loan_ledger_bal' 
+          WHERE column_key IN ('loan_ledger_bal', 'loan_bal_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) latest_loans
       `),
@@ -27,7 +27,7 @@ async function getDashboard(req, res) {
         FROM (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'loan_int_cf' 
+          WHERE column_key IN ('loan_int_cf', 'loan_int_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) latest_loan_interest
       `),
@@ -38,10 +38,9 @@ async function getDashboard(req, res) {
         LEFT JOIN (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'savings_cf' 
+          WHERE column_key IN ('savings_cf', 'savings_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) latest ON latest.member_id = m.id
-        -- Include all members (active and deactivated) to show their savings
         ORDER BY total_savings DESC
         LIMIT 5
       `),
@@ -54,13 +53,13 @@ async function getDashboard(req, res) {
         LEFT JOIN (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'loan_ledger_bal' 
+          WHERE column_key IN ('loan_ledger_bal', 'loan_bal_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) loan_bal ON loan_bal.member_id = m.id
         LEFT JOIN (
           SELECT DISTINCT ON (member_id) member_id, amount
           FROM monthly_trans 
-          WHERE column_key = 'loan_int_cf' 
+          WHERE column_key IN ('loan_int_cf', 'loan_int_bf') AND amount > 0
           ORDER BY member_id, year DESC, month DESC
         ) loan_int ON loan_int.member_id = m.id
         WHERE loan_bal.amount > 0 OR loan_int.amount > 0

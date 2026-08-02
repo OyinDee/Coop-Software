@@ -1197,16 +1197,15 @@ async function importBalances(req, res) {
           `, [memberId, savTotal, dataMonth, dataYear]);
         }
 
-        if (loanBF > 0 && monthlyPrincipal > 0) {
+        if (loanBF > 0) {
           await client.query(
             `DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`,
             [memberId]
           );
-          const months = Math.ceil(loanBF / monthlyPrincipal);
-          const janPrincipal = Math.min(monthlyPrincipal, loanBF);
-          const janInterest = monthlyInterest;
-          const balanceAfterJan = loanBF - janPrincipal;
-          const intBalAfterJan = Math.max(loanIntBF - janInterest, 0);
+          const prinPaid = monthlyPrincipal;
+          const monthlyPrin = prinPaid > 0 ? prinPaid : Math.round((loanBF / 12) * 100) / 100;
+          const months = prinPaid > 0 ? Math.ceil(loanBF / prinPaid) : 12;
+          const balanceAfterJan = Math.max(0, loanBF - prinPaid);
           const loanStatus = balanceAfterJan <= 0 ? 'cleared' : 'active';
           const dateIssued = `${bfYear}-${String(bfMonth).padStart(2, '0')}-01`;
 
@@ -1219,16 +1218,16 @@ async function importBalances(req, res) {
             RETURNING id
           `, [
             memberId, loanBF, months, balanceAfterJan,
-            monthlyPrincipal, loanIntBF, monthlyInterest,
-            janInterest, loanStatus, dateIssued,
+            monthlyPrin, loanIntBF, monthlyInterest,
+            monthlyInterest, loanStatus, dateIssued,
           ]);
 
-          if (janPrincipal > 0 || janInterest > 0) {
+          if (prinPaid > 0 || monthlyInterest > 0) {
             await client.query(`
               INSERT INTO loan_repayments
                 (loan_id, member_id, principal_paid, interest_paid, month, year)
               VALUES ($1,$2,$3,$4,$5,$6)
-            `, [loanRow.rows[0].id, memberId, janPrincipal, janInterest, dataMonth, dataYear]);
+            `, [loanRow.rows[0].id, memberId, prinPaid, monthlyInterest, dataMonth, dataYear]);
           }
         }
 
@@ -1243,30 +1242,44 @@ async function importBalances(req, res) {
           `, [memberId, commBF, bfMonth, bfYear]);
         }
 
+        const parsedSavingsCF = parseAmt(col(r, 'NET SAVING C/F', 'SAVINGS C/F', 'SAVINGS CF', 'NET SAVINGS C/F', 'NET SAVING C F'));
+        const parsedLoanLedgerBal = parseAmt(col(r, 'LN LEDGER BAL.', 'LOAN LEDGER BAL.', 'LOAN LEDGER BAL', 'LOAN LEDGER BALANCE'));
+        const parsedLoanIntCF = parseAmt(col(r, 'INT. BAL. C/F', 'LOAN INT. BAL. C/F', 'INT BAL C/F', 'LOAN INTEREST BAL C/F', 'LOAN INT C/F'));
+        const parsedCommCF = parseAmt(col(r, 'COM. BAL. C/F', 'COM.  BAL. C/F', 'COMM BAL C/F', 'COMMODITY SALES BAL. C/F', 'COMM C/F'));
+
+        const savingsWithdrawal = parseAmt(col(r, 'LESS: WITHDRAWAL', 'WITHDRAWAL', 'SAVINGS WITHDRAWAL'));
+        const loanGranted = parseAmt(col(r, 'ADD: LOAN GRANTED ', 'ADD: LOAN GRANTED', 'LOAN GRANTED', 'ADD: LOAN GRANTED THIS MONTH', 'LOAN GRANTED THIS MONTH', 'GRANTS', 'GRANT', 'ADD LOAN GRANTED THIS MONTH'));
+        const loanIntCharged = parseAmt(col(r, ' INT. CHARGE', 'INT. CHARGE', 'INT CHARGE', 'ADD: INTEREST CHARGED ON LOAN GRANTED THIS MONTH', 'LOAN INT CHARGED', 'INTEREST CHARGED'));
+
+        const savingsCF = parsedSavingsCF > 0 ? parsedSavingsCF : Math.max(0, savingsBF + monthlySavings + savingsBank - savingsWithdrawal);
+        const loanLedgerBal = parsedLoanLedgerBal > 0 ? parsedLoanLedgerBal : Math.max(0, loanBF + loanGranted - monthlyPrincipal - loanPrinBank);
+        const loanIntCF = parsedLoanIntCF > 0 ? parsedLoanIntCF : Math.max(0, loanIntBF + loanIntCharged - monthlyInterest - loanIntBank);
+        const commCF = parsedCommCF > 0 ? parsedCommCF : Math.max(0, commBF + commAdd - commRepay - commRepayBank);
+
         const transValues = {
           savings_bf: savingsBF,
           savings_add: monthlySavings,
           savings_add_bank: savingsBank,
-          savings_withdrawal: parseAmt(col(r, 'LESS: WITHDRAWAL', 'WITHDRAWAL', 'SAVINGS WITHDRAWAL')),
-          savings_cf: parseAmt(col(r, 'NET SAVING C/F', 'SAVINGS C/F', 'SAVINGS CF', 'NET SAVINGS C/F', 'NET SAVING C F')),
+          savings_withdrawal: savingsWithdrawal,
+          savings_cf: savingsCF,
           loan_bal_bf: loanBF,
-          loan_granted: parseAmt(col(r, 'ADD: LOAN GRANTED ', 'ADD: LOAN GRANTED', 'LOAN GRANTED', 'ADD: LOAN GRANTED THIS MONTH', 'LOAN GRANTED THIS MONTH', 'GRANTS', 'GRANT', 'ADD LOAN GRANTED THIS MONTH')),
+          loan_granted: loanGranted,
           loan_repayment: monthlyPrincipal,
           loan_repayment_bank: loanPrinBank,
-          loan_ledger_bal: parseAmt(col(r, 'LN LEDGER BAL.', 'LOAN LEDGER BAL.', 'LOAN LEDGER BAL', 'LOAN LEDGER BALANCE')),
+          loan_ledger_bal: loanLedgerBal,
           loan_int_bf: loanIntBF,
-          loan_int_charged: parseAmt(r[' INT. CHARGE'] || r['INT. CHARGE'] || r['INT CHARGE'] || '0'),
+          loan_int_charged: loanIntCharged,
           loan_int_paid: monthlyInterest,
           loan_int_paid_bank: loanIntBank,
-          loan_int_cf: parseAmt(r['INT. BAL. C/F'] || r['LOAN INT. BAL. C/F'] || r['INT BAL C/F'] || '0'),
+          loan_int_cf: loanIntCF,
           comm_bal_bf: commBF,
           comm_add: commAdd,
           comm_repayment: commRepay,
           comm_repayment_bank: commRepayBank,
-          comm_bal_cf: parseAmt(r['COM.  BAL. C/F'] || r['COM. BAL. C/F'] || r['COMM BAL C/F'] || '0'),
+          comm_bal_cf: commCF,
           form: formFee,
           other_charges: otherCharges,
-          total_deduction: totalDeduction,
+          total_deduction: totalDeduction || (monthlySavings + monthlyPrincipal + monthlyInterest + commRepay + formFee + otherCharges),
         };
 
         for (const [column_key, amount] of Object.entries(transValues)) {
