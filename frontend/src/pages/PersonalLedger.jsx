@@ -17,6 +17,7 @@ export default function PersonalLedger() {
   const [emailMonth, setEmailMonth] = useState(new Date().getMonth() + 1);
   const [emailYear, setEmailYear] = useState(new Date().getFullYear());
   const [sendingReports, setSendingReports] = useState(false);
+  const [reportProgress, setReportProgress] = useState(null); // { sent: 0, skipped: 0, failed: 0, total: 0 }
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -39,19 +40,72 @@ export default function PersonalLedger() {
   const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
   const sendMonthlyReports = async () => {
-    if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to all members with email addresses?`)) return;
     setSendingReports(true);
+    setReportProgress(null);
     try {
-      const response = await api.post('/members/reports/email-monthly', {
-        month: emailMonth,
-        year: emailYear,
-      });
-      const data = response.data;
-      toast(`Reports sent: ${data.sent_count}, skipped: ${data.skipped_count}, failed: ${data.failed_count}`);
+      // Fetch all members using a high limit to get all records
+      const resAll = await api.get('/members', { params: { limit: 100000 } });
+      const allMembers = resAll.data.members || [];
+      const membersWithEmail = allMembers.filter(m => m.email && m.email.trim());
+
+      if (membersWithEmail.length === 0) {
+        toast('No active members with email addresses found.', 'warning');
+        setSendingReports(false);
+        return;
+      }
+
+      if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to ${membersWithEmail.length} members with email addresses?`)) {
+        setSendingReports(false);
+        return;
+      }
+
+      // Chunk members into batches of 10
+      const chunkSize = 10;
+      const chunks = [];
+      for (let i = 0; i < membersWithEmail.length; i += chunkSize) {
+        chunks.push(membersWithEmail.slice(i, i + chunkSize));
+      }
+
+      let sentCount = 0;
+      let skippedCount = 0;
+      let failedCount = 0;
+      const totalCount = membersWithEmail.length;
+
+      setReportProgress({ sent: 0, skipped: 0, failed: 0, total: totalCount });
+
+      for (let c = 0; c < chunks.length; c++) {
+        const chunk = chunks[c];
+        const memberIds = chunk.map(m => m.id);
+
+        try {
+          const response = await api.post('/members/reports/email-monthly', {
+            month: emailMonth,
+            year: emailYear,
+            member_ids: memberIds,
+          });
+          const data = response.data;
+          sentCount += data.sent_count || 0;
+          skippedCount += data.skipped_count || 0;
+          failedCount += data.failed_count || 0;
+        } catch (err) {
+          failedCount += chunk.length;
+          console.error('Error sending batch:', err);
+        }
+
+        setReportProgress({
+          sent: sentCount,
+          skipped: skippedCount,
+          failed: failedCount,
+          total: totalCount
+        });
+      }
+
+      toast(`Finished sending reports. Sent: ${sentCount}, Skipped: ${skippedCount}, Failed: ${failedCount}`);
     } catch (err) {
       toast(err.response?.data?.error || 'Failed to send reports', 'error');
     } finally {
       setSendingReports(false);
+      setReportProgress(null);
     }
   };
 
@@ -78,7 +132,11 @@ export default function PersonalLedger() {
             onChange={(e) => setEmailYear(Number(e.target.value || new Date().getFullYear()))}
           />
           <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports}>
-            {sendingReports ? 'Sending...' : 'Email Monthly Reports'}
+            {sendingReports 
+              ? (reportProgress 
+                  ? `Sending (${reportProgress.sent + reportProgress.skipped + reportProgress.failed}/${reportProgress.total})...`
+                  : 'Starting...')
+              : 'Email Monthly Reports'}
           </button>
         </div>
       </div>
