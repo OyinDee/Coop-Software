@@ -73,36 +73,38 @@ function computeDerivedValue(key, amounts) {
 function matchPatternKey(rawLabel) {
   const s = canonicalizeLabel(rawLabel);
 
-  if (/^savings\s+b\s*f(\s+\w+)*$/.test(s)) return 'savings_bf';
+  if (/^savings\s+b\s*f(\s+\w+)*$/.test(s) || (s.includes('savings') && (s.includes('b f') || s.includes('bf')))) return 'savings_bf';
   if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month') && s.includes('bank')) return 'savings_add_bank';
   if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month')) return 'savings_add';
   if (s.includes('less') && s.includes('withdraw')) return 'savings_withdrawal';
   if (s.includes('net') && s.includes('saving') && (s.includes('c f') || s.includes('cf'))) return 'savings_cf';
 
-  if (s.includes('loan') && s.includes('prin') && s.includes('bal') && s.includes('b') && s.includes('f')) return 'loan_bal_bf';
-  if (s.includes('add') && s.includes('loan') && s.includes('granted') && s.includes('month')) return 'loan_granted';
+  if ((s.includes('loan') || s.includes('ln')) && (s.includes('prin') || s.includes('principal') || s.includes('bal')) && (s.includes('b f') || s.includes('bf'))) return 'loan_bal_bf';
+  if ((s.includes('loan') || s.includes('ln')) && (s.includes('granted') || s.includes('grant'))) return 'loan_granted';
+  if (s === 'grant' || s === 'grants') return 'loan_granted';
   if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment') && s.includes('bank')) return 'loan_repayment_bank';
   if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment')) return 'loan_repayment';
   if (s.includes('loan') && s.includes('ledger') && s.includes('bal')) return 'loan_ledger_bal';
   if (s.includes('loan') && s.includes('status')) return 'loan_status';
   if (s.includes('ln') && s.includes('duration') && s.includes('left')) return 'ln_duration_left';
 
-  if (s.includes('loan') && s.includes('interest') && s.includes('balance') && s.includes('b') && s.includes('f')) return 'loan_int_bf';
-  if (s.includes('interest') && s.includes('charged') && s.includes('loan') && s.includes('month')) return 'loan_int_charged';
+  if ((s.includes('loan') || s.includes('ln')) && (s.includes('interest') || s.includes('int')) && (s.includes('b f') || s.includes('bf') || s.includes('bal'))) return 'loan_int_bf';
+  if ((s.includes('interest') || s.includes('int')) && (s.includes('b f') || s.includes('bf'))) return 'loan_int_bf';
+  if (s.includes('interest') && s.includes('charged')) return 'loan_int_charged';
   if (s.includes('less') && s.includes('loan') && s.includes('interest') && s.includes('paid') && s.includes('bank')) return 'loan_int_paid_bank';
   if (s.includes('less') && s.includes('loan') && s.includes('interest') && s.includes('paid')) return 'loan_int_paid';
-  if (s.includes('loan') && s.includes('interest') && s.includes('balance') && (s.includes('c f') || s.includes('cf'))) return 'loan_int_cf';
+  if (s.includes('loan') && (s.includes('interest') || s.includes('int')) && (s.includes('c f') || s.includes('cf'))) return 'loan_int_cf';
 
-  if (s.includes('commodity') && s.includes('sales') && s.includes('bal') && s.includes('b') && s.includes('f')) return 'comm_bal_bf';
-  if (s.includes('add') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('month')) return 'comm_add';
-  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('repay') && s.includes('bank')) return 'comm_repayment_bank';
-  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('sales') && s.includes('repay')) return 'comm_repayment';
-  if (s.includes('comm') && s.includes('sales') && s.includes('bal') && (s.includes('c f') || s.includes('cf'))) return 'comm_bal_cf';
+  if ((s.includes('commodity') || s.includes('comm') || s.includes('com')) && (s.includes('b f') || s.includes('bf'))) return 'comm_bal_bf';
+  if (s.includes('add') && (s.includes('comm') || s.includes('commodity')) && s.includes('month')) return 'comm_add';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('repay') && s.includes('bank')) return 'comm_repayment_bank';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('repay')) return 'comm_repayment';
+  if ((s.includes('comm') || s.includes('commodity')) && (s.includes('c f') || s.includes('cf'))) return 'comm_bal_cf';
   if (s.includes('comm') && s.includes('status')) return 'comm_gad_status';
   if (s.includes('com') && s.includes('gad') && s.includes('duration') && s.includes('left')) return 'com_gad_duration_left';
 
   if (s === 'form' || s.includes('form fee')) return 'form';
-  if (s.includes('other') && s.includes('charge')) return 'other_charges';
+  if (s.includes('other') || s.includes('others')) return 'other_charges';
   if (s.includes('total') && s.includes('deduction')) return 'total_deduction';
   if (s.includes('total') && s.includes('payment') && s.includes('bank')) return 'total_payment_bank';
   if (s.includes('to') && s.includes('payroll')) return 'to_payroll';
@@ -121,12 +123,14 @@ const LABEL_ALIASES = {
   'add sav during the month (bank)': 'savings_add_bank', 'add: sav during the month (bank)': 'savings_add_bank',
   'add sav. during the month (bank)': 'savings_add_bank', 'add: sav. during the month (bank)': 'savings_add_bank',
   'less withdrawal': 'savings_withdrawal', 'less: withdrawal': 'savings_withdrawal',
-  'net saving c/f': 'savings_cf', 'net savings c/f': 'savings_cf', 'savings c/f': 'savings_cf', 'savings cf': 'savings_cf',
+  'net saving c/f': 'savings_cf', 'net savings c/f': 'savings_cf', 'savings c/f': 'savings_cf', 'savings cf': 'savings_cf', 'net saving c f': 'savings_cf', 'savings c f': 'savings_cf',
   
   'loan prin. bal. b/f': 'loan_bal_bf', 'loan principal balance b/f': 'loan_bal_bf',
   'loan prin bal b/f': 'loan_bal_bf', 'loan bal b/f': 'loan_bal_bf', 'loan bal bf': 'loan_bal_bf', 'loan b/f': 'loan_bal_bf',
+  'loan prin bal b f': 'loan_bal_bf', 'loan principal balance b f': 'loan_bal_bf', 'loan bal b f': 'loan_bal_bf', 'loan b f': 'loan_bal_bf', 'loan prin b f': 'loan_bal_bf',
   'add loan granted this month (auto)': 'loan_granted', 'add: loan granted this month (auto)': 'loan_granted',
-  'add: loan granted this month': 'loan_granted', 'loan granted this month': 'loan_granted',
+  'add: loan granted this month': 'loan_granted', 'loan granted this month': 'loan_granted', 'add loan granted this month': 'loan_granted',
+  'loan granted': 'loan_granted', 'add loan granted': 'loan_granted', 'add: loan granted': 'loan_granted', 'grants': 'loan_granted', 'grant': 'loan_granted', 'loan grant': 'loan_granted',
   'less loan principal repayment': 'loan_repayment', 'less: loan principal repayment': 'loan_repayment',
   'loan principal repayment': 'loan_repayment', 'loan repayment': 'loan_repayment',
   'less loan principal repayment (bank)': 'loan_repayment_bank', 'less: loan principal repayment (bank)': 'loan_repayment_bank',
@@ -134,7 +138,10 @@ const LABEL_ALIASES = {
   'loan ledger bal.': 'loan_ledger_bal', 'loan ledger bal': 'loan_ledger_bal', 'loan ledger balance': 'loan_ledger_bal',
   
   'loan interest balance b/f': 'loan_int_bf', 'loan int balance b/f': 'loan_int_bf',
-  'loan int b/f': 'loan_int_bf', 'loan interest b/f': 'loan_int_bf',
+  'loan int b/f': 'loan_int_bf', 'loan interest b/f': 'loan_int_bf', 'loan int. b/f': 'loan_int_bf',
+  'loan interest balance b f': 'loan_int_bf', 'loan int balance b f': 'loan_int_bf',
+  'loan int b f': 'loan_int_bf', 'loan interest b f': 'loan_int_bf', 'loan int bal b f': 'loan_int_bf',
+  'ln int b/f': 'loan_int_bf', 'ln int b f': 'loan_int_bf', 'int b/f': 'loan_int_bf', 'int b f': 'loan_int_bf', 'interest b/f': 'loan_int_bf', 'interest b f': 'loan_int_bf',
   'add interest charged on loan granted this month': 'loan_int_charged',
   'add:interest charged on loan granted this month:': 'loan_int_charged',
   'add: interest charged on loan granted this month:': 'loan_int_charged',
@@ -146,11 +153,12 @@ const LABEL_ALIASES = {
   'less: loan interest paid (bank)': 'loan_int_paid_bank', 'less: loan interest paid ( bank)': 'loan_int_paid_bank',
   'loan interest paid (bank)': 'loan_int_paid_bank',
   'loan interest balance c/f': 'loan_int_cf', 'loan int balance c/f': 'loan_int_cf',
-  'loan int c/f': 'loan_int_cf', 'loan interest c/f': 'loan_int_cf', 'loan int cf': 'loan_int_cf',
+  'loan int c/f': 'loan_int_cf', 'loan interest c/f': 'loan_int_cf', 'loan int cf': 'loan_int_cf', 'loan interest balance c f': 'loan_int_cf', 'loan interest c f': 'loan_int_cf',
   
   'commodity sales bal. b/f': 'comm_bal_bf', 'commodity sales bal b/f': 'comm_bal_bf',
   'comm. sales bal. b/f': 'comm_bal_bf', 'comm sales bal b/f': 'comm_bal_bf',
   'commodity bal. b/f': 'comm_bal_bf', 'commodity b/f': 'comm_bal_bf',
+  'commodity sales bal b f': 'comm_bal_bf', 'comm sales bal b f': 'comm_bal_bf', 'commodity b f': 'comm_bal_bf', 'comm b f': 'comm_bal_bf',
   'add comm. sales during the month': 'comm_add', 'add: comm. sales during the month': 'comm_add',
   'commodity sales during the month': 'comm_add', 'comm sales during the month': 'comm_add',
   'less commodity sales repayment': 'comm_repayment', 'less: commodity sales repayment': 'comm_repayment',
@@ -158,10 +166,10 @@ const LABEL_ALIASES = {
   'less commodity sales repayment (bank)': 'comm_repayment_bank', 'less: comm. sales repay. (bank)': 'comm_repayment_bank',
   'less: commodity sales repay. (bank)': 'comm_repayment_bank', 'comm. sales repay. (bank)': 'comm_repayment_bank',
   'comm. sales bal. c/f': 'comm_bal_cf', 'commodity sales bal. c/f': 'comm_bal_cf',
-  'comm sales bal c/f': 'comm_bal_cf', 'commodity c/f': 'comm_bal_cf',
+  'comm sales bal c/f': 'comm_bal_cf', 'commodity c/f': 'comm_bal_cf', 'commodity sales bal c f': 'comm_bal_cf', 'comm sales bal c f': 'comm_bal_cf',
   
   'form': 'form', 'form fee': 'form',
-  'other charges': 'other_charges', 'other charge': 'other_charges',
+  'other charges': 'other_charges', 'other charge': 'other_charges', 'others': 'other_charges', 'other': 'other_charges', 'other deductions': 'other_charges', 'other deduction': 'other_charges',
   'total payment (bank)': 'total_payment_bank', 'to payroll': 'to_payroll',
   'from payroll payroll deduction': 'payroll_deduction', '(from payroll) payroll deduction': 'payroll_deduction',
   'payroll deduction': 'payroll_deduction', 'differences': 'differences',

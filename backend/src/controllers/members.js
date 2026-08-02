@@ -1088,48 +1088,48 @@ async function importBalances(req, res) {
           formFee, otherCharges, totalDeduction;
  
       if (isTransFormat) {
-        savingsBF        = parseAmt(r['SAVINGS B/F']);
-        monthlySavings   = parseAmt(r['ADD: SAV'] || r['ADD: SAVINGS DURING THE MONTH'] || r['ADD: SAVINGS']);
-        savingsBank      = parseAmt(r['ADD: SAV  (BANK)'] || r['ADD: SAV (BANK)'] || r['ADD: SAVINGS DURING THE MONTH (BANK)']);
- 
-        loanBF           = parseAmt(r['LOAN PRIN. B/F'] || r['LOAN PRIN. BAL. B/F']);
-        monthlyPrincipal = parseAmt(r['LESS: LN. PRIN. REPAY.'] || r['LESS: LOAN PRINCIPAL REPAYMENT'] || r['LESS: LN. PRIN. REP.']);
-        loanPrinBank     = parseAmt(r['LESS: LN. PRIN. REP. (BANK)'] || r['LESS: LOAN PRINCIPAL REPAYMENT (BANK)']);
- 
-        loanIntBF        = parseAmt(r['LOAN INT. BAL. B/F'] || r['LOAN INTEREST BALANCE B/F']);
-        monthlyInterest  = parseAmt(r['INT. PD.'] || r['INT. PD. (BANK)'] || r['LESS: LOAN INTEREST PAID THIS MONTH'] || r['INT PD']);
-        loanIntBank      = parseAmt(r['INT. PD.  (BANK)'] || r['INT. PD. (BANK)']);
- 
-        commBF           = parseAmt(r['COM.  BAL. B/F'] || r['COM. BAL. B/F'] || r['COMM. BAL. B/F'] || r['COMMODITY SALES BAL. B/F']);
-        commAdd          = parseAmt(r[' COMM.DURING'] || r['COMM.DURING'] || r['ADD: COMM. SALES DURING THE MONTH']);
-        commRepay        = parseAmt(r['COM. REPAY. '] || r['COM. REPAY.'] || r['LESS: COMMODITY SALES REPAYMENT']);
-        commRepayBank    = parseAmt(r['COM. REPAY. (BANK)'] || r['LESS: COMM. SALES REPAY. (BANK)']);
- 
-        formFee          = parseAmt(r['FORM']);
-        otherCharges     = parseAmt(r['OTHER CHARGES']);
-        totalDeduction   = parseAmt(r['TOTAL DEDUCTION']);
- 
+        savingsBF        = parseAmt(col(r, 'SAVINGS B/F', 'SAVINGS BAL B/F', 'SAVINGS BAL. B/F', 'SAVINGS BF', 'SAVINGS B F'));
+        monthlySavings   = parseAmt(col(r, 'ADD: SAV', 'ADD: SAVINGS DURING THE MONTH', 'ADD: SAVINGS', 'SAVINGS', 'ADD SAVINGS', 'ADD SAVINGS DURING THE MONTH'));
+        savingsBank      = parseAmt(col(r, 'ADD: SAV (BANK)', 'ADD: SAV  (BANK)', 'ADD: SAVINGS DURING THE MONTH (BANK)', 'ADD SAVINGS (BANK)'));
+
+        loanBF           = parseAmt(col(r, 'LOAN PRIN. B/F', 'LOAN PRIN. BAL. B/F', 'LOAN PRIN BAL B/F', 'LOAN B/F', 'LOAN PRINCIPAL B/F', 'LOAN BAL B/F', 'LOAN PRIN BAL B F', 'LOAN B F'));
+        monthlyPrincipal = parseAmt(col(r, 'LESS: LN. PRIN. REPAY.', 'LESS: LOAN PRINCIPAL REPAYMENT', 'LESS: LN. PRIN. REP.', 'LOAN REPAYMENT', 'LOAN PRINCIPAL REPAYMENT', 'LN PRIN REPAY'));
+        loanPrinBank     = parseAmt(col(r, 'LESS: LN. PRIN. REP. (BANK)', 'LESS: LOAN PRINCIPAL REPAYMENT (BANK)', 'LOAN REPAYMENT (BANK)'));
+
+        loanIntBF        = parseAmt(col(r, 'LOAN INT. BAL. B/F', 'LOAN INTEREST BALANCE B/F', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'LOAN INT BAL B/F', 'LN INT B/F', 'INT B/F', 'INTEREST B/F', 'LOAN INT B F', 'LOAN INTEREST B F', 'INT B F', 'LN INT B F'));
+        monthlyInterest  = parseAmt(col(r, 'INT. PD.', 'INT. PD. (BANK)', 'LESS: LOAN INTEREST PAID THIS MONTH', 'INT PD', 'LOAN INTEREST PAID', 'LESS: LOAN INTEREST PAID'));
+        loanIntBank      = parseAmt(col(r, 'INT. PD. (BANK)', 'INT. PD.  (BANK)', 'LOAN INTEREST PAID (BANK)'));
+
+        commBF           = parseAmt(col(r, 'COM. BAL. B/F', 'COM.  BAL. B/F', 'COMM. BAL. B/F', 'COMMODITY SALES BAL. B/F', 'COMMODITY B/F', 'COMM B/F', 'COMM B F', 'COMMODITY B F'));
+        commAdd          = parseAmt(col(r, ' COMM.DURING', 'COMM.DURING', 'ADD: COMM. SALES DURING THE MONTH', 'COMMODITY SALES DURING THE MONTH', 'COMM DURATION'));
+        commRepay        = parseAmt(col(r, 'COM. REPAY. ', 'COM. REPAY.', 'LESS: COMMODITY SALES REPAYMENT', 'COMMODITY REPAYMENT', 'COMM REPAYMENT'));
+        commRepayBank    = parseAmt(col(r, 'COM. REPAY. (BANK)', 'LESS: COMM. SALES REPAY. (BANK)', 'COMM REPAYMENT (BANK)'));
+
+        formFee          = parseAmt(col(r, 'FORM', 'FORM FEE'));
+        otherCharges     = parseAmt(col(r, 'OTHER CHARGES', 'OTHERS', 'OTHER', 'OTHER CHARGE', 'OTHER DEDUCTIONS', 'OTHER DEDUCTION'));
+        totalDeduction   = parseAmt(col(r, 'TOTAL DEDUCTION', 'TOTAL DEDUCTIONS'));
+
       } else {
         savingsBF        = 0;
-        monthlySavings   = parseAmt(r['SAVINGS']);
+        monthlySavings   = parseAmt(col(r, 'SAVINGS', 'SAVINGS DURING MONTH'));
         savingsBank      = 0;
- 
-        loanBF           = parseAmt(r['LOAN']);
+
+        loanBF           = parseAmt(col(r, 'LOAN', 'LOAN BAL', 'LOAN PRIN'));
         monthlyPrincipal = loanBF > 0
-          ? parseAmt(r['MONTHLY PRINCIPAL'] || r['MONTHLY_PRINCIPAL']) || loanBF / 12
+          ? parseAmt(col(r, 'MONTHLY PRINCIPAL', 'MONTHLY_PRINCIPAL', 'PRINCIPAL REPAYMENT')) || loanBF / 12
           : 0;
         loanPrinBank     = 0;
- 
-        loanIntBF        = parseAmt(r['LN INT'] || r['LN INTEREST'] || r['LOAN INTEREST'] || r['LOAN INT']);
+
+        loanIntBF        = parseAmt(col(r, 'LN INT', 'LN INTEREST', 'LOAN INTEREST', 'LOAN INT', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'INT B/F', 'LOAN INT B F', 'LOAN INTEREST B F'));
         monthlyInterest  = loanIntBF > 0 ? loanIntBF / 12 : 0;
         loanIntBank      = 0;
- 
-        commBF           = parseAmt(r['COMM'] || r['COMMODITY']);
+
+        commBF           = parseAmt(col(r, 'COMM', 'COMMODITY', 'COMM B/F'));
         commAdd          = 0; commRepay = 0; commRepayBank = 0;
         formFee = 0; otherCharges = 0; totalDeduction = 0;
       }
  
-      const monthStr  = (r['MONTH'] || '').toUpperCase();
+      const monthStr  = (col(r, 'MONTH') || '').toUpperCase();
       const MONTHS    = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
                          'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
       let dataMonth   = MONTHS.findIndex(m => monthStr.includes(m)) + 1;
@@ -1210,13 +1210,13 @@ async function importBalances(req, res) {
           savings_bf:          savingsBF,
           savings_add:         monthlySavings,
           savings_add_bank:    savingsBank,
-          savings_withdrawal:  parseAmt(r['LESS: WITHDRAWAL'] || r['WITHDRAWAL'] || '0'),
-          savings_cf:          parseAmt(r['NET SAVING C/F'] || r['SAVINGS C/F'] || '0'),
+          savings_withdrawal:  parseAmt(col(r, 'LESS: WITHDRAWAL', 'WITHDRAWAL', 'SAVINGS WITHDRAWAL')),
+          savings_cf:          parseAmt(col(r, 'NET SAVING C/F', 'SAVINGS C/F', 'SAVINGS CF', 'NET SAVINGS C/F', 'NET SAVING C F')),
           loan_bal_bf:         loanBF,
-          loan_granted:        parseAmt(r['ADD: LOAN GRANTED '] || r['ADD: LOAN GRANTED'] || r['LOAN GRANTED'] || '0'),
+          loan_granted:        parseAmt(col(r, 'ADD: LOAN GRANTED ', 'ADD: LOAN GRANTED', 'LOAN GRANTED', 'ADD: LOAN GRANTED THIS MONTH', 'LOAN GRANTED THIS MONTH', 'GRANTS', 'GRANT', 'ADD LOAN GRANTED THIS MONTH')),
           loan_repayment:      monthlyPrincipal,
           loan_repayment_bank: loanPrinBank,
-          loan_ledger_bal:     parseAmt(r['LN LEDGER BAL.'] || r['LOAN LEDGER BAL.'] || '0'),
+          loan_ledger_bal:     parseAmt(col(r, 'LN LEDGER BAL.', 'LOAN LEDGER BAL.', 'LOAN LEDGER BAL', 'LOAN LEDGER BALANCE')),
           loan_int_bf:         loanIntBF,
           loan_int_charged:    parseAmt(r[' INT. CHARGE'] || r['INT. CHARGE'] || r['INT CHARGE'] || '0'),
           loan_int_paid:       monthlyInterest,
