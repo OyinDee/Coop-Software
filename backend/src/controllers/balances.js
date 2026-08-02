@@ -31,54 +31,47 @@ async function getBalances(req, res) {
         m.full_name,
 
         -- ── SAVINGS ──────────────────────────────────────────────────────
-        -- Savings B/F: most recent savings record before this month
+        -- Savings B/F: from monthly_trans (pre-computed running balance)
         COALESCE((
-          SELECT sv.amount FROM savings sv
-          WHERE sv.member_id = m.id
-            AND (sv.year < $2 OR (sv.year = $2 AND sv.month < $1))
-          ORDER BY sv.year DESC, sv.month DESC LIMIT 1
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'savings_bf' LIMIT 1
         ), 0) AS savings_bf,
 
         -- Savings added this month
-        COALESCE(s.amount, 0) AS savings_this_month,
+        COALESCE((
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'savings_add' LIMIT 1
+        ), COALESCE(s.amount, 0)) AS savings_this_month,
 
         -- Savings added via bank this month
         COALESCE((
           SELECT mt.amount FROM monthly_trans mt
           WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'savings_bank' LIMIT 1
+            AND mt.column_key = 'savings_add_bank' LIMIT 1
         ), 0) AS savings_bank,
 
-        -- Net Savings C/F = B/F + this month + bank
+        -- Net Savings C/F (pre-computed)
         COALESCE((
-          SELECT sv.amount FROM savings sv
-          WHERE sv.member_id = m.id
-            AND (sv.year < $2 OR (sv.year = $2 AND sv.month < $1))
-          ORDER BY sv.year DESC, sv.month DESC LIMIT 1
-        ), 0)
-        + COALESCE(s.amount, 0)
-        + COALESCE((
           SELECT mt.amount FROM monthly_trans mt
           WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'savings_bank' LIMIT 1
+            AND mt.column_key = 'savings_cf' LIMIT 1
         ), 0) AS net_savings_cf,
 
         -- ── LOAN PRINCIPAL ───────────────────────────────────────────────
-        -- Loan Principal B/F: remaining_balance before this month's repayment
+        -- Loan Principal B/F (pre-computed)
         COALESCE((
-          SELECT SUM(l.remaining_balance)
-          FROM loans l
-          WHERE l.member_id = m.id AND l.status IN ('active', 'cleared')
-            AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
-            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_bal_bf' LIMIT 1
         ), 0) AS loan_bal_bf,
 
         -- Loan granted this month
         COALESCE((
-          SELECT SUM(l.principal) FROM loans l
-          WHERE l.member_id = m.id
-            AND EXTRACT(MONTH FROM l.date_issued)::int = $1
-            AND EXTRACT(YEAR FROM l.date_issued)::int = $2
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_granted' LIMIT 1
         ), 0) AS loan_granted,
 
         -- Loan principal repayment this month (cash)
@@ -95,42 +88,37 @@ async function getBalances(req, res) {
             AND mt.column_key = 'loan_repayment_bank' LIMIT 1
         ), 0) AS loan_repayment_bank,
 
-        -- Loan Ledger Balance C/F
+        -- Loan Ledger Balance C/F (pre-computed)
         COALESCE((
-          SELECT SUM(l.remaining_balance) FROM loans l
-          WHERE l.member_id = m.id AND l.status = 'active'
-            AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
-            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_ledger_bal' LIMIT 1
         ), 0) AS loan_ledger_bal,
 
-        -- Loan duration (months remaining on active loan)
+        -- Loan duration (from monthly_trans or loans table fallback)
         COALESCE((
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_duration' LIMIT 1
+        ), COALESCE((
           SELECT months_remaining FROM loans l
           WHERE l.member_id = m.id AND l.status = 'active'
           ORDER BY l.date_issued DESC LIMIT 1
-        ), 0) AS loan_duration,
+        ), 0)) AS loan_duration,
 
         -- ── LOAN INTEREST ────────────────────────────────────────────────
-        -- Interest B/F
+        -- Interest B/F (pre-computed)
         COALESCE((
           SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.column_key = 'loan_int_bf'
-            AND (mt.year < $2 OR (mt.year = $2 AND mt.month < $1))
-          ORDER BY mt.year DESC, mt.month DESC LIMIT 1
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_int_bf' LIMIT 1
         ), 0) AS loan_int_bf,
 
         -- Interest charged this month
         COALESCE((
-          SELECT SUM(
-            CASE
-              WHEN l.months_remaining > 0
-                THEN ROUND((l.total_interest - l.interest_paid) / GREATEST(1, l.months_remaining)::numeric, 2)
-              ELSE 0
-            END
-          ) FROM loans l
-          WHERE l.member_id = m.id AND l.status = 'active'
-            AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
-            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
+          SELECT mt.amount FROM monthly_trans mt
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_int_charged' LIMIT 1
         ), 0) AS loan_int_charged,
 
         -- Interest paid this month (cash)
@@ -147,21 +135,19 @@ async function getBalances(req, res) {
             AND mt.column_key = 'loan_int_paid_bank' LIMIT 1
         ), 0) AS loan_int_paid_bank,
 
-        -- Interest Balance C/F
+        -- Interest Balance C/F (pre-computed)
         COALESCE((
           SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.column_key = 'loan_int_cf'
-            AND mt.month = $1 AND mt.year = $2
-          LIMIT 1
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'loan_int_cf' LIMIT 1
         ), 0) AS loan_int_cf,
 
         -- ── COMMODITY ────────────────────────────────────────────────────
-        -- Commodity B/F
+        -- Commodity B/F (pre-computed)
         COALESCE((
           SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.column_key = 'comm_bal_bf'
-            AND (mt.year < $2 OR (mt.year = $2 AND mt.month < $1))
-          ORDER BY mt.year DESC, mt.month DESC LIMIT 1
+          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+            AND mt.column_key = 'comm_bal_bf' LIMIT 1
         ), 0) AS comm_bal_bf,
 
         -- Commodity added this month
@@ -169,7 +155,7 @@ async function getBalances(req, res) {
           SELECT mt.amount FROM monthly_trans mt
           WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
             AND mt.column_key = 'comm_add' LIMIT 1
-        ), c.amount, 0) AS comm_add,
+        ), COALESCE(c.amount, 0)) AS comm_add,
 
         -- Commodity repayment (cash)
         COALESCE((
@@ -185,7 +171,7 @@ async function getBalances(req, res) {
             AND mt.column_key = 'comm_repayment_bank' LIMIT 1
         ), 0) AS comm_repayment_bank,
 
-        -- Commodity Balance C/F
+        -- Commodity Balance C/F (pre-computed)
         COALESCE((
           SELECT mt.amount FROM monthly_trans mt
           WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
@@ -232,52 +218,23 @@ async function getBalances(req, res) {
             AND mt.column_key = 'other_charges' LIMIT 1
         ), 0) AS other_charges,
 
-        -- Total deduction
-        COALESCE(s.amount, 0)
-        + COALESCE((
-          SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'savings_bank' LIMIT 1
-        ), 0)
-        + COALESCE((
-          SELECT SUM(
-            CASE WHEN l.months_remaining > 0
-              THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
-              ELSE 0 END
-          ) FROM loans l
-          WHERE l.member_id = m.id AND l.status = 'active'
-            AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
-            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
-        ), 0)
-        + COALESCE((
-          SELECT SUM(
-            CASE WHEN l.months_remaining > 0
-              THEN ROUND((l.total_interest - l.interest_paid) / GREATEST(1, l.months_remaining)::numeric, 2)
-              ELSE 0 END
-          ) FROM loans l
-          WHERE l.member_id = m.id AND l.status = 'active'
-            AND (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int) <= ($2 * 12 + $1)
-            AND ($2 * 12 + $1) < (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int + l.months)
-        ), 0)
-        + COALESCE((
-          SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'comm_add' LIMIT 1
-        ), c.amount, 0)
-        + COALESCE((
-          SELECT SUM(mcb.amount) FROM member_custom_balances mcb
-          WHERE mcb.member_id = m.id AND mcb.column_key = 'form'
-        ), 0)
-        + COALESCE((
-          SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'other_charges' LIMIT 1
-        ), 0) AS total_deduction
+        -- Total deduction = savings_add + savings_bank + loan_repayment + loan_repayment_bank + loan_int_paid + loan_int_paid_bank + comm_repayment + comm_repayment_bank + form + other_charges
+        COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'savings_add' LIMIT 1), COALESCE(s.amount, 0))
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'savings_add_bank' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'loan_repayment' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'loan_repayment_bank' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'loan_int_paid' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'loan_int_paid_bank' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'comm_repayment' LIMIT 1), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'comm_repayment_bank' LIMIT 1), 0)
+        + COALESCE((SELECT SUM(mcb.amount) FROM member_custom_balances mcb WHERE mcb.member_id = m.id AND mcb.column_key = 'form'), 0)
+        + COALESCE((SELECT mt.amount FROM monthly_trans mt WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2 AND mt.column_key = 'other_charges' LIMIT 1), 0)
+        AS total_deduction
 
       FROM members m
       LEFT JOIN savings   s  ON s.member_id  = m.id AND s.month  = $1 AND s.year  = $2
       LEFT JOIN commodity c  ON c.member_id  = m.id AND c.month  = $1 AND c.year  = $2
-      ORDER BY regexp_replace(m.ledger_no, '\\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
+      ORDER BY regexp_replace(m.ledger_no, '\d', '', 'g'), NULLIF(regexp_replace(m.ledger_no, '\D', '', 'g'), '')::numeric NULLS LAST, m.ledger_no
     `, [m, y]);
 
     // Column definitions matching the CSV layout
