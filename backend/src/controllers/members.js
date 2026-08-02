@@ -396,18 +396,44 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
   `;
 }
 
-function getMailer() {
-  const user = process.env.SMTP_USER;
-  const pass = process.env.SMTP_PASS;
+async function getMailer() {
+  let user = process.env.SMTP_USER;
+  let pass = process.env.SMTP_PASS;
+  let host = process.env.SMTP_HOST;
+  let port = process.env.SMTP_PORT;
 
   if (!user || !pass) {
-    return { error: 'Missing SMTP configuration. Set SMTP_USER and SMTP_PASS.' };
+    try {
+      const res = await db.query(
+        "SELECT key, value FROM app_settings WHERE key IN ('smtp_user', 'smtp_pass', 'smtp_host', 'smtp_port')"
+      );
+      const settings = Object.fromEntries(res.rows.map(r => [r.key, r.value]));
+      if (settings.smtp_user && settings.smtp_pass) {
+        user = user || settings.smtp_user;
+        pass = pass || settings.smtp_pass;
+        host = host || settings.smtp_host;
+        port = port || settings.smtp_port;
+      }
+    } catch (e) {
+      console.error('Error fetching SMTP settings from DB:', e);
+    }
   }
 
-  const transporter = nodemailer.createTransport({
+  if (!user || !pass) {
+    return { error: 'Missing SMTP configuration. Set SMTP_USER and SMTP_PASS in environment variables or Settings.' };
+  }
+
+  const transportConfig = host ? {
+    host,
+    port: parseInt(port) || 587,
+    secure: parseInt(port) === 465,
+    auth: { user, pass },
+  } : {
     service: 'gmail',
     auth: { user, pass },
-  });
+  };
+
+  const transporter = nodemailer.createTransport(transportConfig);
 
   return { transporter, from: user };
 }
@@ -888,15 +914,7 @@ async function importCSV(req, res) {
       const r = {};
       for (const k of Object.keys(row)) r[k.trim()] = row[k];
 
-      const ledger_no = r['Ledger No'] || r['LEDGER No'] || r['ledger_no'] || r['L/No'] || r['L/NO'];
-      const full_name = r['Name'] || r['FULL NAME'] || r['full_name'] || r['NAME'];
-      if (!ledger_no || !full_name) { skipped++; continue; }
-
-      const date_of_admission = parseDate(r['Date of admission'] || r['Date of Admission'] || r['DATE OF ADMISSION']);
-
       // ── Flexible header lookup ────────────────────────────────────────────
-      // Normalises all keys to UPPERCASE (trimmed) then tries each candidate
-      // in order, returning the first non-empty match.
       const findValue = (...keys) => {
         const upper = {};
         for (const k of Object.keys(r)) upper[k.trim().toUpperCase()] = r[k];
@@ -906,6 +924,20 @@ async function importCSV(req, res) {
         }
         return null;
       };
+
+      const ledger_no = findValue('LEDGER No', 'LEDGER NO', 'Ledger No', 'ledger_no', 'L/No', 'L/NO');
+      const full_name = findValue('Name', 'FULL NAME', 'full_name', 'NAME');
+      if (!ledger_no || !full_name) { skipped++; continue; }
+
+      const date_of_admission = parseDate(findValue('Date of admission', 'Date of Admission', 'DATE OF ADMISSION', 'ADMISSION DATE'));
+
+      let rawBank = findValue('BANK', 'Bank');
+      let rawAcct = findValue('acct number', 'ACCT NUMBER', 'ACCOUNT NUMBER', 'Account Number', 'Acct No', 'Account No', 'ACCT');
+      // In some spreadsheets (e.g. membership upload), BANK column contains NUBAN account numbers
+      if (rawBank && /^\d{8,12}$/.test(rawBank.replace(/\s+/g, '')) && !rawAcct) {
+        rawAcct = rawBank;
+        rawBank = null;
+      }
 
       try {
         await db.query(`
@@ -938,20 +970,20 @@ async function importCSV(req, res) {
           full_name.trim(),
           // Gender
           findValue('GENDER', 'Gender'),
-          // Marital status — header has trailing space in this CSV
+          // Marital status
           findValue('Marital status', 'MARITAL STATUS', 'Marital Status', 'Marital'),
-          // Phone — CSV header is "GSM No"
-          findValue('GSM No', 'GSM NO', 'Phone No', 'PHONE NO', 'Phone', 'PHONE', 'GSM'),
-          // Email — CSV header is "Fuoye Email address"
-          findValue('Fuoye Email address', 'FUOYE EMAIL ADDRESS', 'FUOYE Email', 'FUOYE E-mail', 'Email', 'EMAIL', 'E-MAIL'),
+          // Phone — includes "Phone No.", "Phone No", "GSM No"
+          findValue('Phone No.', 'PHONE NO.', 'Phone No', 'PHONE NO', 'GSM No', 'GSM NO', 'Phone', 'PHONE', 'GSM'),
+          // Email — includes "FUOYE E-mail Address", "Fuoye Email address"
+          findValue('FUOYE E-mail Address', 'FUOYE EMAIL ADDRESS', 'Fuoye Email address', 'FUOYE Email', 'FUOYE E-mail', 'Email', 'EMAIL', 'E-MAIL'),
           date_of_admission,
           // Bank
-          findValue('BANK', 'Bank'),
-          // Account number — CSV header is "acct number"
-          findValue('acct number', 'ACCT NUMBER', 'ACCOUNT NUMBER', 'Account Number', 'Acct No', 'Account No', 'ACCT'),
-          // Department (not in this CSV but keep for other formats)
+          rawBank,
+          // Account number
+          rawAcct,
+          // Department
           findValue('DEPARTMENT', 'Department', 'Dept'),
-          // Next of kin — CSV header has trailing space
+          // Next of kin
           findValue('Next of kin', 'NEXT OF KIN', 'Next of Kin', 'Next of kin '),
           // Relationship
           findValue('Relationship', 'RELATIONSHIP', 'RELATION', 'Relation'),
@@ -1371,7 +1403,7 @@ async function emailMemberMonthlyReport(req, res) {
   }
   const { month, year } = resolved;
 
-  const mailer = getMailer();
+  const mailer = await getMailer();
   if (mailer.error) {
     return res.status(500).json({ error: mailer.error });
   }
@@ -1397,7 +1429,7 @@ async function emailMonthlyReports(req, res) {
   }
   const { month, year } = resolved;
 
-  const mailer = getMailer();
+  const mailer = await getMailer();
   if (mailer.error) {
     return res.status(500).json({ error: mailer.error });
   }
