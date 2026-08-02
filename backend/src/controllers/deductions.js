@@ -74,16 +74,16 @@ function matchPatternKey(rawLabel) {
   const s = canonicalizeLabel(rawLabel);
 
   if (/^savings\s+b\s*f(\s+\w+)*$/.test(s) || (s.includes('savings') && (s.includes('b f') || s.includes('bf')))) return 'savings_bf';
-  if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month') && s.includes('bank')) return 'savings_add_bank';
-  if (s.includes('add') && s.includes('sav') && s.includes('during') && s.includes('month')) return 'savings_add';
+  if ((s.includes('sav') || s.includes('saving')) && s.includes('bank')) return 'savings_add_bank';
+  if ((s.includes('add') || s.includes('saving') || s.includes('sav')) && (s.includes('month') || s.includes('sav'))) return 'savings_add';
   if (s.includes('less') && s.includes('withdraw')) return 'savings_withdrawal';
   if (s.includes('net') && s.includes('saving') && (s.includes('c f') || s.includes('cf'))) return 'savings_cf';
 
   if ((s.includes('loan') || s.includes('ln')) && (s.includes('prin') || s.includes('principal') || s.includes('bal')) && (s.includes('b f') || s.includes('bf'))) return 'loan_bal_bf';
   if ((s.includes('loan') || s.includes('ln')) && (s.includes('granted') || s.includes('grant'))) return 'loan_granted';
   if (s === 'grant' || s === 'grants') return 'loan_granted';
-  if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment') && s.includes('bank')) return 'loan_repayment_bank';
-  if (s.includes('less') && s.includes('loan') && s.includes('principal') && s.includes('repayment')) return 'loan_repayment';
+  if (s.includes('less') && s.includes('loan') && (s.includes('principal') || s.includes('prin')) && s.includes('bank')) return 'loan_repayment_bank';
+  if (s.includes('less') && s.includes('loan') && (s.includes('principal') || s.includes('prin'))) return 'loan_repayment';
   if (s.includes('loan') && s.includes('ledger') && s.includes('bal')) return 'loan_ledger_bal';
   if (s.includes('loan') && s.includes('status')) return 'loan_status';
   if (s.includes('ln') && s.includes('duration') && s.includes('left')) return 'ln_duration_left';
@@ -97,8 +97,8 @@ function matchPatternKey(rawLabel) {
 
   if ((s.includes('commodity') || s.includes('comm') || s.includes('com')) && (s.includes('b f') || s.includes('bf'))) return 'comm_bal_bf';
   if (s.includes('add') && (s.includes('comm') || s.includes('commodity')) && s.includes('month')) return 'comm_add';
-  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('repay') && s.includes('bank')) return 'comm_repayment_bank';
-  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('repay')) return 'comm_repayment';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity')) && s.includes('bank')) return 'comm_repayment_bank';
+  if (s.includes('less') && (s.includes('comm') || s.includes('commodity'))) return 'comm_repayment';
   if ((s.includes('comm') || s.includes('commodity')) && (s.includes('c f') || s.includes('cf'))) return 'comm_bal_cf';
   if (s.includes('comm') && s.includes('status')) return 'comm_gad_status';
   if (s.includes('com') && s.includes('gad') && s.includes('duration') && s.includes('left')) return 'com_gad_duration_left';
@@ -119,6 +119,7 @@ const LABEL_ALIASES = {
   'add savings during the month': 'savings_add', 'add: savings during the month': 'savings_add',
   'add sav during the month': 'savings_add', 'add: sav during the month': 'savings_add',
   'add sav. during the month': 'savings_add', 'add: sav. during the month': 'savings_add',
+  'saving (bank)': 'savings_add_bank', 'savings (bank)': 'savings_add_bank', 'saving bank': 'savings_add_bank', 'savings bank': 'savings_add_bank',
   'add savings during the month (bank)': 'savings_add_bank', 'add: savings during the month (bank)': 'savings_add_bank',
   'add sav during the month (bank)': 'savings_add_bank', 'add: sav during the month (bank)': 'savings_add_bank',
   'add sav. during the month (bank)': 'savings_add_bank', 'add: sav. during the month (bank)': 'savings_add_bank',
@@ -132,9 +133,9 @@ const LABEL_ALIASES = {
   'add: loan granted this month': 'loan_granted', 'loan granted this month': 'loan_granted', 'add loan granted this month': 'loan_granted',
   'loan granted': 'loan_granted', 'add loan granted': 'loan_granted', 'add: loan granted': 'loan_granted', 'grants': 'loan_granted', 'grant': 'loan_granted', 'loan grant': 'loan_granted',
   'less loan principal repayment': 'loan_repayment', 'less: loan principal repayment': 'loan_repayment',
-  'loan principal repayment': 'loan_repayment', 'loan repayment': 'loan_repayment',
+  'loan principal repayment': 'loan_repayment', 'loan repayment': 'loan_repayment', 'less: loan principal': 'loan_repayment', 'less loan principal': 'loan_repayment',
   'less loan principal repayment (bank)': 'loan_repayment_bank', 'less: loan principal repayment (bank)': 'loan_repayment_bank',
-  'loan repayment (bank)': 'loan_repayment_bank',
+  'less: loan principal (bank)': 'loan_repayment_bank', 'less loan principal (bank)': 'loan_repayment_bank', 'loan repayment (bank)': 'loan_repayment_bank',
   'loan ledger bal.': 'loan_ledger_bal', 'loan ledger bal': 'loan_ledger_bal', 'loan ledger balance': 'loan_ledger_bal',
   
   'loan interest balance b/f': 'loan_int_bf', 'loan int balance b/f': 'loan_int_bf',
@@ -163,6 +164,7 @@ const LABEL_ALIASES = {
   'commodity sales during the month': 'comm_add', 'comm sales during the month': 'comm_add',
   'less commodity sales repayment': 'comm_repayment', 'less: commodity sales repayment': 'comm_repayment',
   'less: commodity sales repayment ': 'comm_repayment', 'commodity sales repayment': 'comm_repayment', 'comm repayment': 'comm_repayment',
+  'less: commodity members': 'comm_repayment', 'less commodity members': 'comm_repayment', 'commodity members': 'comm_repayment', 'less commodity': 'comm_repayment',
   'less commodity sales repayment (bank)': 'comm_repayment_bank', 'less: comm. sales repay. (bank)': 'comm_repayment_bank',
   'less: commodity sales repay. (bank)': 'comm_repayment_bank', 'comm. sales repay. (bank)': 'comm_repayment_bank',
   'comm. sales bal. c/f': 'comm_bal_cf', 'commodity sales bal. c/f': 'comm_bal_cf',
