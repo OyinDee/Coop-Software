@@ -5,26 +5,36 @@ const { propagateMemberBalances } = require('../utils/propagateBalances');
 // Helper: set savings_add or savings_add_bank in monthly_trans and recalculate savings_cf
 async function syncSavingsToTrans(client, member_id, month, year, savings_add_amount, is_bank = false) {
   const m = parseInt(month), y = parseInt(year);
-  const amt = parseFloat(savings_add_amount) || 0;
 
-  const activeKey = is_bank ? 'savings_add_bank' : 'savings_add';
-  const inactiveKey = is_bank ? 'savings_add' : 'savings_add_bank';
+  // Get sum of standard savings (is_bank = false)
+  const stdRes = await client.query(`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM savings
+    WHERE member_id = $1 AND month = $2 AND year = $3 AND is_bank = false
+  `, [member_id, m, y]);
+  const stdAmt = parseFloat(stdRes.rows[0].total) || 0;
 
-  // Set active column key
+  // Get sum of bank savings (is_bank = true)
+  const bnkRes = await client.query(`
+    SELECT COALESCE(SUM(amount), 0) AS total FROM savings
+    WHERE member_id = $1 AND month = $2 AND year = $3 AND is_bank = true
+  `, [member_id, m, y]);
+  const bnkAmt = parseFloat(bnkRes.rows[0].total) || 0;
+
+  // Insert standard savings to monthly_trans
   await client.query(`
     INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-    VALUES ($1, $2, $3, $4, $5)
+    VALUES ($1, 'savings_add', $2, $3, $4)
     ON CONFLICT (member_id, column_key, month, year)
     DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
-  `, [member_id, activeKey, amt, m, y]);
+  `, [member_id, stdAmt, m, y]);
 
-  // Reset inactive column key to 0
+  // Insert bank savings to monthly_trans
   await client.query(`
     INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-    VALUES ($1, $2, 0, $3, $4)
+    VALUES ($1, 'savings_add_bank', $2, $3, $4)
     ON CONFLICT (member_id, column_key, month, year)
     DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
-  `, [member_id, inactiveKey, m, y]);
+  `, [member_id, bnkAmt, m, y]);
 
   // Get other savings variables for this month
   const res = await client.query(`
@@ -143,11 +153,11 @@ async function createSavings(req, res) {
   try {
     await client.query('BEGIN');
 
-    // Upsert savings record
+    // Upsert savings record based on the new unique constraint (member_id, month, year, is_bank)
     const result = await client.query(`
       INSERT INTO savings (member_id, amount, month, year, description, is_bank)
       VALUES ($1,$2,$3,$4,$5,$6)
-      ON CONFLICT (member_id, month, year) DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description, is_bank = EXCLUDED.is_bank
+      ON CONFLICT (member_id, month, year, is_bank) DO UPDATE SET amount = EXCLUDED.amount, description = EXCLUDED.description
       RETURNING *
     `, [member_id, amount, month, year, description, is_bank || false]);
 
