@@ -23,6 +23,20 @@ async function getBalances(req, res) {
       }
     }
 
+    // If no transactions exist for this month/year, return empty result
+    const hasData = await db.query(
+      `SELECT 1 FROM monthly_trans WHERE month = $1 AND year = $2 LIMIT 1`,
+      [m, y]
+    );
+    if (hasData.rows.length === 0) {
+      return res.json({
+        columns: [],
+        members: [],
+        dataMonth: m,
+        dataYear: y,
+      });
+    }
+
     const result = await db.query(`
       SELECT
         m.id,
