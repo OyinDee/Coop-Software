@@ -1100,7 +1100,7 @@ async function importBalances(req, res) {
         monthlyInterest  = parseAmt(r['INT. PD.'] || r['INT. PD. (BANK)'] || r['LESS: LOAN INTEREST PAID THIS MONTH'] || r['INT PD']);
         loanIntBank      = parseAmt(r['INT. PD.  (BANK)'] || r['INT. PD. (BANK)']);
  
-        commBF           = parseAmt(r['COM.  BAL. B/F'] || r['COMM. BAL. B/F'] || r['COMMODITY SALES BAL. B/F']);
+        commBF           = parseAmt(r['COM.  BAL. B/F'] || r['COM. BAL. B/F'] || r['COMM. BAL. B/F'] || r['COMMODITY SALES BAL. B/F']);
         commAdd          = parseAmt(r[' COMM.DURING'] || r['COMM.DURING'] || r['ADD: COMM. SALES DURING THE MONTH']);
         commRepay        = parseAmt(r['COM. REPAY. '] || r['COM. REPAY.'] || r['LESS: COMMODITY SALES REPAYMENT']);
         commRepayBank    = parseAmt(r['COM. REPAY. (BANK)'] || r['LESS: COMM. SALES REPAY. (BANK)']);
@@ -1210,6 +1210,7 @@ async function importBalances(req, res) {
           savings_bf:          savingsBF,
           savings_add:         monthlySavings,
           savings_add_bank:    savingsBank,
+          savings_withdrawal:  parseAmt(r['LESS: WITHDRAWAL'] || r['WITHDRAWAL'] || '0'),
           savings_cf:          parseAmt(r['NET SAVING C/F'] || r['SAVINGS C/F'] || '0'),
           loan_bal_bf:         loanBF,
           loan_granted:        parseAmt(r['ADD: LOAN GRANTED '] || r['ADD: LOAN GRANTED'] || r['LOAN GRANTED'] || '0'),
