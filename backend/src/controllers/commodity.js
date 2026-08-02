@@ -1,5 +1,7 @@
 const db = require('../db');
 
+const { propagateMemberBalances } = require('../utils/propagateBalances');
+
 // Helper: sync comm_add from commodity table and recalculate comm_bal_cf
 async function recalcCommTrans(client, member_id, month, year) {
   const m = parseInt(month), y = parseInt(year);
@@ -38,6 +40,9 @@ async function recalcCommTrans(client, member_id, month, year) {
     ON CONFLICT (member_id, column_key, month, year)
     DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
   `, [member_id, comm_bal_cf, m, y]);
+
+  // Propagate balances forward to subsequent months
+  await propagateMemberBalances(client, member_id, m, y);
 }
 
 async function getCommodity(req, res) {

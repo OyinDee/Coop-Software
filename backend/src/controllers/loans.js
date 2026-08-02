@@ -238,7 +238,7 @@ async function deleteLoan(req, res) {
 
 async function addRepayment(req, res) {
   const { id } = req.params;
-  const { month, year, principal_paid, interest_paid, description } = req.body;
+  const { month, year, principal_paid, interest_paid, description, is_bank } = req.body;
   const client = await db.getClient();
   try {
     await client.query('BEGIN');
@@ -325,31 +325,37 @@ async function addRepayment(req, res) {
 
     // FIX #10: Record repayment in loan_repayments table
     await client.query(`
-      INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description)
-      VALUES ($1,$2,$3,$4,$5,$6,$7)
-    `, [id, loan.member_id, principalAmount, interestAmount, repMonth, repYear, description || null]);
+      INSERT INTO loan_repayments (loan_id, member_id, principal_paid, interest_paid, month, year, description, is_bank)
+      VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+    `, [id, loan.member_id, principalAmount, interestAmount, repMonth, repYear, description || null, is_bank || false]);
+
+    const principalKey = is_bank ? 'loan_repayment_bank' : 'loan_repayment';
+    const interestKey = is_bank ? 'loan_int_paid_bank' : 'loan_int_paid';
 
     // FIX #10: Update monthly_trans with repayment amounts
     if (principalAmount > 0) {
       await client.query(`
         INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-        VALUES ($1, 'loan_repayment', $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (member_id, column_key, month, year)
         DO UPDATE SET amount = monthly_trans.amount + EXCLUDED.amount, updated_at = NOW()
-      `, [loan.member_id, principalAmount, repMonth, repYear]);
+      `, [loan.member_id, principalKey, principalAmount, repMonth, repYear]);
     }
 
     if (interestAmount > 0) {
       await client.query(`
         INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-        VALUES ($1, 'loan_int_paid', $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (member_id, column_key, month, year)
         DO UPDATE SET amount = monthly_trans.amount + EXCLUDED.amount, updated_at = NOW()
-      `, [loan.member_id, interestAmount, repMonth, repYear]);
+      `, [loan.member_id, interestKey, interestAmount, repMonth, repYear]);
     }
 
     // FIX #1: Recalculate loan_ledger_bal and loan_int_cf for the repayment month
     await recalcLoanTrans(client, loan.member_id, repMonth, repYear);
+
+    // Propagate balances forward to subsequent months
+    await propagateMemberBalances(client, loan.member_id, repMonth, repYear);
 
     await client.query('COMMIT');
     res.json({ message: 'Repayment recorded', newBalance, newStatus: finalStatus });

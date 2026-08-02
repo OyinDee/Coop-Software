@@ -34,6 +34,9 @@ export default function MemberDetail() {
   const [savingsForm, setSavingsForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', is_bank: false });
   const [commOpen, setCommOpen] = useState(false);
   const [commForm, setCommForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
+  const [repayOpen, setRepayOpen] = useState(false);
+  const [repayLoanId, setRepayLoanId] = useState(null);
+  const [repayForm, setRepayForm] = useState({ principal_paid: '', interest_paid: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', is_bank: false });
   const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
   const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [sendingReport, setSendingReport] = useState(false);
@@ -123,14 +126,39 @@ export default function MemberDetail() {
     } catch { toast('Error', 'error'); }
   };
 
-  const handleRepayment = async (loanId) => {
-    const now = new Date();
-    if (!window.confirm(`Record repayment for ${now.toLocaleString('default', { month: 'long' })} ${now.getFullYear()}?`)) return;
+  const openRepayModal = (loan) => {
+    setRepayLoanId(loan.id);
+    setRepayForm({
+      principal_paid: parseFloat(loan.monthly_principal || 0).toFixed(2),
+      interest_paid: parseFloat(loan.monthly_interest || 0).toFixed(2),
+      month: new Date().getMonth() + 1,
+      year: new Date().getFullYear(),
+      description: 'Manual Repayment',
+      is_bank: false
+    });
+    setRepayOpen(true);
+  };
+
+  const handleRepaymentSubmit = async (e) => {
+    e.preventDefault();
+    setSaving(true);
     try {
-      await api.post(`/loans/${loanId}/repayment`, { month: now.getMonth() + 1, year: now.getFullYear() });
-      toast('Repayment recorded'); load();
+      await api.post(`/loans/${repayLoanId}/repayment`, {
+        month: repayForm.month,
+        year: repayForm.year,
+        principal_paid: parseFloat(repayForm.principal_paid) || 0,
+        interest_paid: parseFloat(repayForm.interest_paid) || 0,
+        description: repayForm.description,
+        is_bank: repayForm.is_bank
+      });
+      toast('Repayment recorded');
+      setRepayOpen(false);
+      load();
+      loadLedger(ledgerYear);
     } catch (err) {
       toast(err.response?.data?.error || 'Error', 'error');
+    } finally {
+      setSaving(false);
     }
   };
 
@@ -591,7 +619,7 @@ export default function MemberDetail() {
                     <td>
                       <div style={{ display: 'flex', gap: 6 }}>
                         {l.status === 'active' && (
-                          <button className="btn btn-ghost btn-sm" onClick={() => handleRepayment(l.id)}>Repay</button>
+                          <button className="btn btn-ghost btn-sm" onClick={() => openRepayModal(l)}>Repay</button>
                         )}
                         <button className="btn btn-danger btn-sm" onClick={() => handleDeleteLoan(l.id)}>X</button>
                       </div>
@@ -834,6 +862,51 @@ export default function MemberDetail() {
             <div className="modal-footer">
               <button type="button" className="btn btn-ghost" onClick={() => setEditOpen(false)}>Cancel</button>
               <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving...' : 'Save Changes'}</button>
+            </div>
+          </form>
+        </Modal>
+      )}
+
+      {/* Record Repayment Modal */}
+      {repayOpen && (
+        <Modal title="Record Loan Repayment" onClose={() => setRepayOpen(false)}>
+          <form onSubmit={handleRepaymentSubmit}>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Month</label>
+                <select className="form-input" value={repayForm.month} onChange={(e) => setRepayForm({ ...repayForm, month: Number(e.target.value) })}>
+                  {MONTH_LABELS.map((m, i) => <option key={i} value={i + 1}>{m}</option>)}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Year</label>
+                <input className="form-input" type="number" value={repayForm.year} onChange={(e) => setRepayForm({ ...repayForm, year: Number(e.target.value) })} />
+              </div>
+            </div>
+            <div className="form-row">
+              <div className="form-group">
+                <label className="form-label">Principal Amount (₦) *</label>
+                <input className="form-input" type="number" step="0.01" value={repayForm.principal_paid} onChange={(e) => setRepayForm({ ...repayForm, principal_paid: e.target.value })} required />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Interest Amount (₦) *</label>
+                <input className="form-input" type="number" step="0.01" value={repayForm.interest_paid} onChange={(e) => setRepayForm({ ...repayForm, interest_paid: e.target.value })} required />
+              </div>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Method</label>
+              <select className="form-input" value={repayForm.is_bank ? "true" : "false"} onChange={(e) => setRepayForm({ ...repayForm, is_bank: e.target.value === "true" })}>
+                <option value="false">Salary Deduction (Cash/Standard)</option>
+                <option value="true">Bank Transfer / Direct Deposit (Bank)</option>
+              </select>
+            </div>
+            <div className="form-group">
+              <label className="form-label">Description</label>
+              <input className="form-input" value={repayForm.description} onChange={(e) => setRepayForm({ ...repayForm, description: e.target.value })} />
+            </div>
+            <div className="modal-footer">
+              <button type="button" className="btn btn-ghost" onClick={() => setRepayOpen(false)}>Cancel</button>
+              <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Record Repayment'}</button>
             </div>
           </form>
         </Modal>
