@@ -94,7 +94,7 @@ function UploadModal({ month, year, onDone, onClose }) {
         </div>
         <div className="form-group" style={{ marginBottom: 16 }}>
           <label className="form-label">CSV File</label>
-          <input ref={fileRef} className="form-input" type="file" accept=".csv" required />
+          <input ref={fileRef} className="form-input" type="file" accept=".csv,.xlsx,.xls" required />
         </div>
         <div style={{ display: 'flex', gap: 10 }}>
           <button type="submit" className="btn btn-primary" disabled={uploading}>
