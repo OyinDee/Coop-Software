@@ -42,6 +42,7 @@ export default function Balances() {
   const [viewYear,  setViewYear]  = useState(null);
   const [page,      setPage]      = useState(1);
   const [showBasicOnly, setShowBasicOnly] = useState(false);
+  const [hasData,   setHasData]   = useState(true);
 
   const MONTHS = ['January','February','March','April','May','June',
     'July','August','September','October','November','December'];
@@ -55,6 +56,7 @@ export default function Balances() {
       setMembers(r.data.members);
       setDataMonth(r.data.dataMonth || null);
       setDataYear(r.data.dataYear   || null);
+      setHasData(r.data.hasData !== false);
       if (!month && !year && r.data.dataMonth && r.data.dataYear) {
         setViewMonth(r.data.dataMonth);
         setViewYear(r.data.dataYear);
@@ -291,6 +293,18 @@ export default function Balances() {
             <tbody>
               {loading ? (
                 <tr><td colSpan={visibleColumns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>Loading…</td></tr>
+              ) : !hasData ? (
+                <tr><td colSpan={visibleColumns.length + 3 || 6} style={{ textAlign: 'center', padding: '60px 20px' }}>
+                  <div style={{ color: 'var(--muted)', fontSize: 15, marginBottom: 8 }}>
+                    No data for {viewMonth && MONTHS[viewMonth - 1]} {viewYear || ''}
+                  </div>
+                  <div style={{ color: 'var(--faint)', fontSize: 13, marginBottom: 16 }}>
+                    Upload a deductions sheet or generate from last month on the Deductions page.
+                  </div>
+                  <Link to="/deductions" className="btn btn-primary" style={{ textDecoration: 'none' }}>
+                    Go to Deductions
+                  </Link>
+                </td></tr>
               ) : filtered.length === 0 ? (
                 <tr><td colSpan={visibleColumns.length + 3} style={{ textAlign: 'center', padding: 50, color: 'var(--muted)' }}>
                   {search ? 'No members match your search.' : 'No members found.'}

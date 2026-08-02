@@ -16,7 +16,7 @@ export default function Savings() {
   const now = new Date();
   const [filterMonth, setFilterMonth] = useState(now.getMonth() + 1);
   const [filterYear, setFilterYear] = useState(now.getFullYear());
-  const [form, setForm] = useState({ member_id: '', amount: '', month: now.getMonth() + 1, year: now.getFullYear(), description: '' });
+  const [form, setForm] = useState({ member_id: '', amount: '', month: now.getMonth() + 1, year: now.getFullYear(), description: '', is_bank: false });
   const [saving, setSaving] = useState(false);
   const toast = useToast();
 
@@ -33,15 +33,15 @@ export default function Savings() {
 
   useEffect(() => { load(); }, [filterMonth, filterYear]);
 
-  const openAdd = () => { setForm({ member_id: '', amount: '', month: filterMonth, year: filterYear, description: '' }); setEditItem(null); setAddOpen(true); };
-  const openEdit = (s) => { setForm({ member_id: s.member_id, amount: s.amount, month: s.month, year: s.year, description: s.description || '' }); setEditItem(s); setAddOpen(true); };
+  const openAdd = () => { setForm({ member_id: '', amount: '', month: filterMonth, year: filterYear, description: '', is_bank: false }); setEditItem(null); setAddOpen(true); };
+  const openEdit = (s) => { setForm({ member_id: s.member_id, amount: s.amount, month: s.month, year: s.year, description: s.description || '', is_bank: s.is_bank || false }); setEditItem(s); setAddOpen(true); };
 
   const handleSave = async (e) => {
     e.preventDefault(); setSaving(true);
     try {
       if (editItem && editItem.id) {
         // Real existing record — update it
-        await api.put(`/savings/${editItem.id}`, { amount: form.amount, description: form.description });
+        await api.put(`/savings/${editItem.id}`, { amount: form.amount, description: form.description, is_bank: form.is_bank });
         toast('Savings updated');
       } else if (editItem && !editItem.id) {
         // Carried-forward row (no real record yet) — create a real one for this month
@@ -197,6 +197,13 @@ export default function Savings() {
                   </div>
                 </>
               )}
+            </div>
+            <div className="form-group">
+              <label className="form-label">Payment Method</label>
+              <select className="form-input" value={form.is_bank ? "true" : "false"} onChange={(e) => setForm({ ...form, is_bank: e.target.value === "true" })}>
+                <option value="false">Salary Deduction (Cash/Standard)</option>
+                <option value="true">Bank Transfer / Direct Deposit (Bank)</option>
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">Description</label>

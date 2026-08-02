@@ -23,7 +23,7 @@ async function getBalances(req, res) {
       }
     }
 
-    // If no transactions exist for this month/year, return empty result
+    // If no transactions exist for this month/year, return empty result with flag
     const hasData = await db.query(
       `SELECT 1 FROM monthly_trans WHERE month = $1 AND year = $2 LIMIT 1`,
       [m, y]
@@ -34,6 +34,7 @@ async function getBalances(req, res) {
         members: [],
         dataMonth: m,
         dataYear: y,
+        hasData: false,
       });
     }
 
