@@ -37,6 +37,8 @@ export default function Members() {
   const [balImportOpen, setBalImportOpen] = useState(false);
   const [balImporting, setBalImporting] = useState(false);
   const [balImportResult, setBalImportResult] = useState(null);
+  const [balMonth, setBalMonth] = useState(12);
+  const [balYear, setBalYear] = useState(2025);
   const [form, setForm] = useState(EMPTY_MEMBER);
   const [saving, setSaving] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -137,7 +139,10 @@ export default function Members() {
     if (!file) return;
     setBalImporting(true);
     setBalImportResult(null);
-    const fd = new FormData(); fd.append('file', file);
+    const fd = new FormData();
+    fd.append('file', file);
+    fd.append('month', balMonth);
+    fd.append('year', balYear);
     try {
       const r = await api.post('/members/import/balances', fd, {
         headers: { 'Content-Type': 'multipart/form-data' },
@@ -463,6 +468,35 @@ export default function Members() {
 
           {!balImporting && !balImportResult && (
             <>
+              <div style={{ display: 'flex', gap: 12, marginBottom: 16 }}>
+                <div style={{ flex: 1 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fg2)', marginBottom: 4 }}>Target Period Month:</label>
+                  <select
+                    className="select-input"
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--fg)' }}
+                    value={balMonth}
+                    onChange={(e) => setBalMonth(parseInt(e.target.value, 10))}
+                  >
+                    {['January','February','March','April','May','June','July','August','September','October','November','December'].map((m, i) => (
+                      <option key={i+1} value={i+1}>{m}</option>
+                    ))}
+                  </select>
+                </div>
+                <div style={{ width: 120 }}>
+                  <label style={{ display: 'block', fontSize: 12, fontWeight: 600, color: 'var(--fg2)', marginBottom: 4 }}>Year:</label>
+                  <select
+                    className="select-input"
+                    style={{ width: '100%', padding: '6px 10px', borderRadius: 4, border: '1px solid var(--border)', background: 'var(--bg2)', color: 'var(--fg)' }}
+                    value={balYear}
+                    onChange={(e) => setBalYear(parseInt(e.target.value, 10))}
+                  >
+                    {[2023, 2024, 2025, 2026, 2027].map(y => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+
               <input type="file" accept=".csv,.xlsx,.xls" ref={balFileRef} style={{ display: 'none' }} onChange={(e) => handleBalanceImport(e.target.files[0])} />
               <div
                 className="drop-zone"
@@ -475,7 +509,7 @@ export default function Members() {
                     <line x1="12" y1="1" x2="12" y2="23" /><path d="M17 5H9.5a3.5 3.5 0 000 7h5a3.5 3.5 0 010 7H6" />
                   </svg>
                 </div>
-                <div className="dz-text">Click to select balances file, or drag and drop</div>
+                <div className="dz-text">Click to select balances file for {['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][balMonth - 1]} {balYear}, or drag and drop</div>
                 <div className="dz-sub">.csv, .xlsx, .xls</div>
               </div>
             </>
