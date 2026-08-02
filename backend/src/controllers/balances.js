@@ -95,16 +95,21 @@ async function getBalances(req, res) {
             AND mt.column_key = 'loan_ledger_bal' LIMIT 1
         ), 0) AS loan_ledger_bal,
 
-        -- Loan duration (from monthly_trans or loans table fallback)
-        COALESCE((
-          SELECT mt.amount FROM monthly_trans mt
-          WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
-            AND mt.column_key = 'loan_duration' LIMIT 1
-        ), COALESCE((
-          SELECT months_remaining FROM loans l
-          WHERE l.member_id = m.id AND l.status = 'active'
-          ORDER BY l.date_issued DESC LIMIT 1
-        ), 0)) AS loan_duration,
+        -- Loan duration: dynamically calculated, only when this month has loan data
+        CASE
+          WHEN COALESCE((
+            SELECT mt.amount FROM monthly_trans mt
+            WHERE mt.member_id = m.id AND mt.month = $1 AND mt.year = $2
+              AND mt.column_key = 'loan_ledger_bal' LIMIT 1
+          ), 0) > 0
+          THEN COALESCE((
+            SELECT GREATEST(0, l.months - (($2 * 12 + $1) - (EXTRACT(YEAR FROM l.date_issued)::int * 12 + EXTRACT(MONTH FROM l.date_issued)::int)))::int
+            FROM loans l
+            WHERE l.member_id = m.id AND l.status = 'active'
+            ORDER BY l.date_issued DESC LIMIT 1
+          ), 0)
+          ELSE 0
+        END AS loan_duration,
 
         -- ── LOAN INTEREST ────────────────────────────────────────────────
         -- Interest B/F (pre-computed)
