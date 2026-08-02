@@ -4,7 +4,7 @@ const fs = require('fs');
 const path = require('path');
 // loans table needs optional description column – add it if it doesn't exist
 // (run once on startup, harmless if already present)
-db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => {});
+db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => { });
 const XLSX = require('xlsx');           // npm install xlsx  (already in most Node stacks)
 const { parse } = require('csv-parse/sync');
 
@@ -336,28 +336,28 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
         </table>
 
         ${section('SAVINGS:',
-          row('SAVINGS B/F', `${formatAmount(previous?.savings_cf || 0)}`) +
-          row('ADD: Savings this month', `${formatAmount(current.savings_add)}`) +
-          row('ADD: Savings this month (Bank)', `${formatAmount(current.savings_add_bank)}`) +
-          row('LESS: Withdrawal', `${formatAmount(current.savings_withdrawal)}`) +
-          row('Net Saving C/F', `${formatAmount(current.savings_cf)}`),
-          'green')}
+    row('SAVINGS B/F', `${formatAmount(previous?.savings_cf || 0)}`) +
+    row('ADD: Savings this month', `${formatAmount(current.savings_add)}`) +
+    row('ADD: Savings this month (Bank)', `${formatAmount(current.savings_add_bank)}`) +
+    row('LESS: Withdrawal', `${formatAmount(current.savings_withdrawal)}`) +
+    row('Net Saving C/F', `${formatAmount(current.savings_cf)}`),
+    'green')}
 
         ${section('LOAN SERVICES:',
-          row('Loan Principal Balance B/F', `${formatAmount(previous?.loan_ledger_bal || 0)}`) +
-          row('ADD: Loan Granted this Month', `${formatAmount(current.loan_granted)}`) +
-          row('LESS: Loan Principal Repayment', `${formatAmount(current.loan_repayment)}`) +
-          row('LESS: Loan Principal Repayment (Bank)', `${formatAmount(current.loan_repayment_bank)}`) +
-          row('Loan Ledger Balance C/F', `${formatAmount(current.loan_ledger_bal)}`),
-          'peach')}
+      row('Loan Principal Balance B/F', `${formatAmount(previous?.loan_ledger_bal || 0)}`) +
+      row('ADD: Loan Granted this Month', `${formatAmount(current.loan_granted)}`) +
+      row('LESS: Loan Principal Repayment', `${formatAmount(current.loan_repayment)}`) +
+      row('LESS: Loan Principal Repayment (Bank)', `${formatAmount(current.loan_repayment_bank)}`) +
+      row('Loan Ledger Balance C/F', `${formatAmount(current.loan_ledger_bal)}`),
+      'peach')}
 
         ${section('LOAN INTEREST:',
-          row('Loan Interest Balance B/F', `${formatAmount(openingLoanInterest)}`) +
-          row('ADD: Ln Interest charged (this month)', `${formatAmount(current.loan_int_charged)}`) +
-          row('LESS: Loan Interest paid', `${formatAmount(current.loan_int_paid)}`) +
-          row('LESS: Loan Interest Paid (Bank)', `${formatAmount(current.loan_int_paid_bank)}`) +
-          row('Loan Interest Balance C/F', `${formatAmount(loanInterestCf)}`),
-          'yellow')}
+        row('Loan Interest Balance B/F', `${formatAmount(openingLoanInterest)}`) +
+        row('ADD: Ln Interest charged (this month)', `${formatAmount(current.loan_int_charged)}`) +
+        row('LESS: Loan Interest paid', `${formatAmount(current.loan_int_paid)}`) +
+        row('LESS: Loan Interest Paid (Bank)', `${formatAmount(current.loan_int_paid_bank)}`) +
+        row('Loan Interest Balance C/F', `${formatAmount(loanInterestCf)}`),
+        'yellow')}
 
         ${section('COMMODITY/GADGET SALES SERVICES:',
           row('Commodity Sales Balance B/F', `${formatAmount(previous?.comm_bal_cf || 0)}`) +
@@ -368,15 +368,15 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
           'blue')}
 
         ${section('SUMMARY:',
-          row('SAVINGS', `${formatAmount(savingsValue)}`) +
-          row('LOAN PRINCIPAL REPAYMENT', `${formatAmount(loanPrincipalValue)}`) +
-          row('LOAN INTEREST', `${formatAmount(loanInterestValue)}`) +
-          row('COMMODITY/GADGET', `${formatAmount(commodityValue)}`) +
-          row('LOAN/MEMBERSHIP FORM', `${formatAmount(current.form)}`) +
-          row('OTHER CHARGES', `${formatAmount(current.other_charges)}`) +
-          row('TOTAL DEDUCTION THIS MONTH', `${formatAmount(current.total_deduction)}`) +
-          row('TOTAL AMOUNT PAID TO BANK', `${formatAmount(totalAmountPaidToBank)}`),
-          'summary')}
+            row('SAVINGS', `${formatAmount(savingsValue)}`) +
+            row('LOAN PRINCIPAL REPAYMENT', `${formatAmount(loanPrincipalValue)}`) +
+            row('LOAN INTEREST', `${formatAmount(loanInterestValue)}`) +
+            row('COMMODITY/GADGET', `${formatAmount(commodityValue)}`) +
+            row('LOAN/MEMBERSHIP FORM', `${formatAmount(current.form)}`) +
+            row('OTHER CHARGES', `${formatAmount(current.other_charges)}`) +
+            row('TOTAL DEDUCTION THIS MONTH', `${formatAmount(current.total_deduction)}`) +
+            row('TOTAL AMOUNT PAID TO BANK', `${formatAmount(totalAmountPaidToBank)}`),
+            'summary')}
 
         <table class="comments">
           <tr>
@@ -486,17 +486,17 @@ async function getMonthlyReport(memberId, month, year) {
   };
   const previousRow = targetMonth > 1
     ? (ledger.rows[targetMonth - 2] || {
-        savings_cf: ledger.bf.savings_bf,
-        loan_ledger_bal: ledger.bf.loan_bal_bf,
-        loan_int_cf: ledger.bf.loan_int_bf,
-        comm_bal_cf: ledger.bf.comm_bal_bf,
-      })
+      savings_cf: ledger.bf.savings_bf,
+      loan_ledger_bal: ledger.bf.loan_bal_bf,
+      loan_int_cf: ledger.bf.loan_int_bf,
+      comm_bal_cf: ledger.bf.comm_bal_bf,
+    })
     : {
-        savings_cf: ledger.bf.savings_bf,
-        loan_ledger_bal: ledger.bf.loan_bal_bf,
-        loan_int_cf: ledger.bf.loan_int_bf,
-        comm_bal_cf: ledger.bf.comm_bal_bf,
-      };
+      savings_cf: ledger.bf.savings_bf,
+      loan_ledger_bal: ledger.bf.loan_bal_bf,
+      loan_int_cf: ledger.bf.loan_int_bf,
+      comm_bal_cf: ledger.bf.comm_bal_bf,
+    };
 
   const report = {
     savings_withdrawal: currentRow.savings_withdrawal || 0,
@@ -590,10 +590,10 @@ async function sendSingleMemberMonthlyReport(memberId, month, year, mailer) {
 async function getMembers(req, res) {
   const { search, page = 1, limit = 1000 } = req.query;
   const offset = (page - 1) * limit;
-  
+
   try {
     let query, params;
-    
+
     if (search) {
       // Use full-text search for better performance
       query = `
@@ -659,7 +659,7 @@ async function getMembers(req, res) {
     }
 
     // Get total count efficiently for pagination
-    const countQuery = search 
+    const countQuery = search
       ? `SELECT COUNT(*) FROM members WHERE is_active = TRUE AND (
            full_name ILIKE $1
            OR ledger_no ILIKE $1
@@ -667,14 +667,14 @@ async function getMembers(req, res) {
            OR department ILIKE $1
          )`
       : `SELECT COUNT(*) FROM members WHERE is_active = TRUE`;
-    
+
     const [result, countResult] = await Promise.all([
       db.query(query, params),
       db.query(countQuery, search ? [`%${search}%`] : [])
     ]);
 
-    res.json({ 
-      members: result.rows, 
+    res.json({
+      members: result.rows,
       total: parseInt(countResult.rows[0].count),
       page: parseInt(page),
       totalPages: Math.ceil(countResult.rows[0].count / limit)
@@ -831,9 +831,9 @@ async function importCSV(req, res) {
 
     // Expand full month names to 3-letter abbrevs for uniform parsing
     const MONTHS = {
-      JANUARY:'Jan', FEBRUARY:'Feb', MARCH:'Mar', APRIL:'Apr',
-      MAY:'May', JUNE:'Jun', JULY:'Jul', AUGUST:'Aug',
-      SEPTEMBER:'Sep', OCTOBER:'Oct', NOVEMBER:'Nov', DECEMBER:'Dec',
+      JANUARY: 'Jan', FEBRUARY: 'Feb', MARCH: 'Mar', APRIL: 'Apr',
+      MAY: 'May', JUNE: 'Jun', JULY: 'Jul', AUGUST: 'Aug',
+      SEPTEMBER: 'Sep', OCTOBER: 'Oct', NOVEMBER: 'Nov', DECEMBER: 'Dec',
     };
     for (const [full, abbr] of Object.entries(MONTHS)) {
       n = n.replace(new RegExp(`\\b${full}\\b`, 'gi'), abbr);
@@ -1004,16 +1004,16 @@ async function importCSV(req, res) {
 
 async function importBalances(req, res) {
   if (!req.file) return res.status(400).json({ error: 'No file uploaded' });
- 
+
   try {
     let records = [];
- 
+
     const isXlsx =
       req.file.originalname?.toLowerCase().endsWith('.xlsx') ||
       req.file.originalname?.toLowerCase().endsWith('.xls') ||
       req.file.mimetype === 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' ||
       req.file.mimetype === 'application/vnd.ms-excel';
- 
+
     if (isXlsx) {
       // ── Parse Excel ────────────────────────────────────────────────────────
       const workbook = XLSX.read(req.file.buffer, { type: 'buffer' });
@@ -1021,11 +1021,11 @@ async function importBalances(req, res) {
       const sheet = workbook.Sheets[sheetName];
       // header: 1 gives array-of-arrays; defval fills empty cells with ''
       const rawRows = XLSX.utils.sheet_to_json(sheet, { header: 1, defval: '' });
- 
+
       if (rawRows.length < 2) {
         return res.status(400).json({ error: 'Excel file appears to be empty' });
       }
- 
+
       // First row = headers
       const headers = rawRows[0].map(h => String(h).trim());
       for (let i = 1; i < rawRows.length; i++) {
@@ -1044,15 +1044,15 @@ async function importBalances(req, res) {
         relax_column_count: true,
       });
     }
- 
+
     let imported = 0, skipped = 0;
     const errors = [];
- 
+
     const parseAmt = (v) => {
       const n = parseFloat(String(v || '').replace(/,/g, '').trim());
       return isNaN(n) ? 0 : n;
     };
- 
+
     // ── Flexible column getter ─────────────────────────────────────────────
     const col = (r, ...keys) => {
       const upper = {};
@@ -1063,12 +1063,12 @@ async function importBalances(req, res) {
       }
       return '';
     };
- 
+
     for (const row of records) {
       // Normalise all keys to uppercase for safe lookup
       const r = {};
       for (const k of Object.keys(row)) r[k.trim().toUpperCase()] = String(row[k] || '').trim();
- 
+
       // ── Skip header/summary rows ───────────────────────────────────────
       const sn = (r['S/N'] || r['S/N.'] || '').replace(/\s/g, '');
       if (sn !== '' && !/^\d+$/.test(sn)) { skipped++; continue; }
@@ -1077,22 +1077,22 @@ async function importBalances(req, res) {
       if (rowName.startsWith('TOTAL') || rowName.startsWith('GRAND TOTAL') || rowName.startsWith('SUMMARY')) {
         skipped++; continue;
       }
- 
+
       // ── Identifiers ────────────────────────────────────────────────────
       const ledger_no = (
         r['L/NO'] || r['L/NO.'] || r['LEDGER NO'] || r['LEDGER NO.'] ||
         r['LEDGER_NO'] || r['LEDGER'] || ''
       ).trim();
- 
+
       const staff_no = (
         r['STAFF NO'] || r['STAFF NO.'] || r['STAFF_NO'] || r['STAFF'] || ''
       ).trim();
- 
+
       if (!ledger_no && !staff_no) {
         errors.push(`Row ${sn}: no ledger or staff number found`);
         skipped++; continue;
       }
- 
+
       // ── Look up member ─────────────────────────────────────────────────
       let memberRes;
       if (ledger_no) {
@@ -1112,75 +1112,75 @@ async function importBalances(req, res) {
         skipped++; continue;
       }
       const memberId = memberRes.rows[0].id;
- 
+
       // ── Detect format ──────────────────────────────────────────────────
       const firstRowKeys = Object.keys(r).map(k => k.toUpperCase());
       const isTransFormat = firstRowKeys.some(k => k === 'L/NO' || k === 'L/NO.');
- 
+
       // ── Parse amounts ──────────────────────────────────────────────────
       let savingsBF, monthlySavings, savingsBank,
-          loanBF, monthlyPrincipal, loanPrinBank,
-          loanIntBF, monthlyInterest, loanIntBank,
-          commBF, commAdd, commRepay, commRepayBank,
-          formFee, otherCharges, totalDeduction;
- 
+        loanBF, monthlyPrincipal, loanPrinBank,
+        loanIntBF, monthlyInterest, loanIntBank,
+        commBF, commAdd, commRepay, commRepayBank,
+        formFee, otherCharges, totalDeduction;
+
       if (isTransFormat) {
-        savingsBF        = parseAmt(col(r, 'SAVINGS B/F', 'SAVINGS BAL B/F', 'SAVINGS BAL. B/F', 'SAVINGS BF', 'SAVINGS B F'));
-        monthlySavings   = parseAmt(col(r, 'ADD: SAV', 'ADD: SAVINGS DURING THE MONTH', 'ADD: SAVINGS', 'SAVINGS', 'ADD SAVINGS', 'ADD SAVINGS DURING THE MONTH'));
-        savingsBank      = parseAmt(col(r, 'ADD: SAV (BANK)', 'ADD: SAV  (BANK)', 'ADD: SAVINGS DURING THE MONTH (BANK)', 'ADD SAVINGS (BANK)'));
+        savingsBF = parseAmt(col(r, 'SAVINGS B/F', 'SAVINGS BAL B/F', 'SAVINGS BAL. B/F', 'SAVINGS BF', 'SAVINGS B F'));
+        monthlySavings = parseAmt(col(r, 'ADD: SAV', 'ADD: SAVINGS DURING THE MONTH', 'ADD: SAVINGS', 'SAVINGS', 'ADD SAVINGS', 'ADD SAVINGS DURING THE MONTH'));
+        savingsBank = parseAmt(col(r, 'ADD: SAV (BANK)', 'ADD: SAV  (BANK)', 'ADD: SAVINGS DURING THE MONTH (BANK)', 'ADD SAVINGS (BANK)'));
 
-        loanBF           = parseAmt(col(r, 'LOAN PRIN. B/F', 'LOAN PRIN. BAL. B/F', 'LOAN PRIN BAL B/F', 'LOAN B/F', 'LOAN PRINCIPAL B/F', 'LOAN BAL B/F', 'LOAN PRIN BAL B F', 'LOAN B F'));
+        loanBF = parseAmt(col(r, 'LOAN PRIN. B/F', 'LOAN PRIN. BAL. B/F', 'LOAN PRIN BAL B/F', 'LOAN B/F', 'LOAN PRINCIPAL B/F', 'LOAN BAL B/F', 'LOAN PRIN BAL B F', 'LOAN B F'));
         monthlyPrincipal = parseAmt(col(r, 'LESS: LN. PRIN. REPAY.', 'LESS: LOAN PRINCIPAL REPAYMENT', 'LESS: LN. PRIN. REP.', 'LOAN REPAYMENT', 'LOAN PRINCIPAL REPAYMENT', 'LN PRIN REPAY'));
-        loanPrinBank     = parseAmt(col(r, 'LESS: LN. PRIN. REP. (BANK)', 'LESS: LOAN PRINCIPAL REPAYMENT (BANK)', 'LOAN REPAYMENT (BANK)'));
+        loanPrinBank = parseAmt(col(r, 'LESS: LN. PRIN. REP. (BANK)', 'LESS: LOAN PRINCIPAL REPAYMENT (BANK)', 'LOAN REPAYMENT (BANK)'));
 
-        loanIntBF        = parseAmt(col(r, 'LOAN INT. BAL. B/F', 'LOAN INTEREST BALANCE B/F', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'LOAN INT BAL B/F', 'LN INT B/F', 'INT B/F', 'INTEREST B/F', 'LOAN INT B F', 'LOAN INTEREST B F', 'INT B F', 'LN INT B F'));
-        monthlyInterest  = parseAmt(col(r, 'INT. PD.', 'INT. PD. (BANK)', 'LESS: LOAN INTEREST PAID THIS MONTH', 'INT PD', 'LOAN INTEREST PAID', 'LESS: LOAN INTEREST PAID'));
-        loanIntBank      = parseAmt(col(r, 'INT. PD. (BANK)', 'INT. PD.  (BANK)', 'LOAN INTEREST PAID (BANK)'));
+        loanIntBF = parseAmt(col(r, 'LOAN INT. BAL. B/F', 'LOAN INTEREST BALANCE B/F', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'LOAN INT BAL B/F', 'LN INT B/F', 'INT B/F', 'INTEREST B/F', 'LOAN INT B F', 'LOAN INTEREST B F', 'INT B F', 'LN INT B F'));
+        monthlyInterest = parseAmt(col(r, 'INT. PD.', 'INT. PD. (BANK)', 'LESS: LOAN INTEREST PAID THIS MONTH', 'INT PD', 'LOAN INTEREST PAID', 'LESS: LOAN INTEREST PAID'));
+        loanIntBank = parseAmt(col(r, 'INT. PD. (BANK)', 'INT. PD.  (BANK)', 'LOAN INTEREST PAID (BANK)'));
 
-        commBF           = parseAmt(col(r, 'COM. BAL. B/F', 'COM.  BAL. B/F', 'COMM. BAL. B/F', 'COMMODITY SALES BAL. B/F', 'COMMODITY B/F', 'COMM B/F', 'COMM B F', 'COMMODITY B F'));
-        commAdd          = parseAmt(col(r, ' COMM.DURING', 'COMM.DURING', 'ADD: COMM. SALES DURING THE MONTH', 'COMMODITY SALES DURING THE MONTH', 'COMM DURATION'));
-        commRepay        = parseAmt(col(r, 'COM. REPAY. ', 'COM. REPAY.', 'LESS: COMMODITY SALES REPAYMENT', 'COMMODITY REPAYMENT', 'COMM REPAYMENT'));
-        commRepayBank    = parseAmt(col(r, 'COM. REPAY. (BANK)', 'LESS: COMM. SALES REPAY. (BANK)', 'COMM REPAYMENT (BANK)'));
+        commBF = parseAmt(col(r, 'COM. BAL. B/F', 'COM.  BAL. B/F', 'COMM. BAL. B/F', 'COMMODITY SALES BAL. B/F', 'COMMODITY B/F', 'COMM B/F', 'COMM B F', 'COMMODITY B F'));
+        commAdd = parseAmt(col(r, ' COMM.DURING', 'COMM.DURING', 'ADD: COMM. SALES DURING THE MONTH', 'COMMODITY SALES DURING THE MONTH', 'COMM DURATION'));
+        commRepay = parseAmt(col(r, 'COM. REPAY. ', 'COM. REPAY.', 'LESS: COMMODITY SALES REPAYMENT', 'COMMODITY REPAYMENT', 'COMM REPAYMENT'));
+        commRepayBank = parseAmt(col(r, 'COM. REPAY. (BANK)', 'LESS: COMM. SALES REPAY. (BANK)', 'COMM REPAYMENT (BANK)'));
 
-        formFee          = parseAmt(col(r, 'FORM', 'FORM FEE'));
-        otherCharges     = parseAmt(col(r, 'OTHER CHARGES', 'OTHERS', 'OTHER', 'OTHER CHARGE', 'OTHER DEDUCTIONS', 'OTHER DEDUCTION'));
-        totalDeduction   = parseAmt(col(r, 'TOTAL DEDUCTION', 'TOTAL DEDUCTIONS'));
+        formFee = parseAmt(col(r, 'FORM', 'FORM FEE'));
+        otherCharges = parseAmt(col(r, 'OTHER CHARGES', 'OTHERS', 'OTHER', 'OTHER CHARGE', 'OTHER DEDUCTIONS', 'OTHER DEDUCTION'));
+        totalDeduction = parseAmt(col(r, 'TOTAL DEDUCTION', 'TOTAL DEDUCTIONS'));
 
       } else {
-        savingsBF        = 0;
-        monthlySavings   = parseAmt(col(r, 'SAVINGS', 'SAVINGS DURING MONTH'));
-        savingsBank      = 0;
+        savingsBF = 0;
+        monthlySavings = parseAmt(col(r, 'SAVINGS', 'SAVINGS DURING MONTH'));
+        savingsBank = 0;
 
-        loanBF           = parseAmt(col(r, 'LOAN', 'LOAN BAL', 'LOAN PRIN'));
+        loanBF = parseAmt(col(r, 'LOAN', 'LOAN BAL', 'LOAN PRIN'));
         monthlyPrincipal = loanBF > 0
           ? parseAmt(col(r, 'MONTHLY PRINCIPAL', 'MONTHLY_PRINCIPAL', 'PRINCIPAL REPAYMENT')) || loanBF / 12
           : 0;
-        loanPrinBank     = 0;
+        loanPrinBank = 0;
 
-        loanIntBF        = parseAmt(col(r, 'LN INT', 'LN INTEREST', 'LOAN INTEREST', 'LOAN INT', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'INT B/F', 'LOAN INT B F', 'LOAN INTEREST B F'));
-        monthlyInterest  = loanIntBF > 0 ? loanIntBF / 12 : 0;
-        loanIntBank      = 0;
+        loanIntBF = parseAmt(col(r, 'LN INT', 'LN INTEREST', 'LOAN INTEREST', 'LOAN INT', 'LOAN INT B/F', 'LOAN INT. B/F', 'LOAN INTEREST B/F', 'INT B/F', 'LOAN INT B F', 'LOAN INTEREST B F'));
+        monthlyInterest = loanIntBF > 0 ? loanIntBF / 12 : 0;
+        loanIntBank = 0;
 
-        commBF           = parseAmt(col(r, 'COMM', 'COMMODITY', 'COMM B/F'));
-        commAdd          = 0; commRepay = 0; commRepayBank = 0;
+        commBF = parseAmt(col(r, 'COMM', 'COMMODITY', 'COMM B/F'));
+        commAdd = 0; commRepay = 0; commRepayBank = 0;
         formFee = 0; otherCharges = 0; totalDeduction = 0;
       }
- 
-      const monthStr  = (col(r, 'MONTH') || '').toUpperCase();
-      const MONTHS    = ['JANUARY','FEBRUARY','MARCH','APRIL','MAY','JUNE',
-                         'JULY','AUGUST','SEPTEMBER','OCTOBER','NOVEMBER','DECEMBER'];
-      let dataMonth   = MONTHS.findIndex(m => monthStr.includes(m)) + 1;
-      let dataYear    = parseInt((monthStr.match(/\d{4}/) || [])[0]) || new Date().getFullYear();
+
+      const monthStr = (col(r, 'MONTH') || '').toUpperCase();
+      const MONTHS = ['JANUARY', 'FEBRUARY', 'MARCH', 'APRIL', 'MAY', 'JUNE',
+        'JULY', 'AUGUST', 'SEPTEMBER', 'OCTOBER', 'NOVEMBER', 'DECEMBER'];
+      let dataMonth = MONTHS.findIndex(m => monthStr.includes(m)) + 1;
+      let dataYear = parseInt((monthStr.match(/\d{4}/) || [])[0]) || new Date().getFullYear();
       if (!dataMonth) { dataMonth = new Date().getMonth() + 1; }
- 
+
       let bfMonth = dataMonth - 1;
-      let bfYear  = dataYear;
+      let bfYear = dataYear;
       if (bfMonth === 0) { bfMonth = 12; bfYear--; }
- 
+
       const client = await db.getClient();
       try {
         await client.query('BEGIN');
- 
+
         if (savingsBF > 0) {
           await client.query(`
             INSERT INTO savings (member_id, amount, month, year, description)
@@ -1196,20 +1196,20 @@ async function importBalances(req, res) {
             ON CONFLICT (member_id, month, year) DO UPDATE SET amount=EXCLUDED.amount
           `, [memberId, savTotal, dataMonth, dataYear]);
         }
- 
+
         if (loanBF > 0 && monthlyPrincipal > 0) {
           await client.query(
             `DELETE FROM loans WHERE member_id=$1 AND description='Opening Balance'`,
             [memberId]
           );
           const months = Math.ceil(loanBF / monthlyPrincipal);
-          const janPrincipal    = Math.min(monthlyPrincipal, loanBF);
-          const janInterest     = monthlyInterest;
+          const janPrincipal = Math.min(monthlyPrincipal, loanBF);
+          const janInterest = monthlyInterest;
           const balanceAfterJan = loanBF - janPrincipal;
-          const intBalAfterJan  = Math.max(loanIntBF - janInterest, 0);
-          const loanStatus      = balanceAfterJan <= 0 ? 'cleared' : 'active';
-          const dateIssued      = `${bfYear}-${String(bfMonth).padStart(2,'0')}-01`;
- 
+          const intBalAfterJan = Math.max(loanIntBF - janInterest, 0);
+          const loanStatus = balanceAfterJan <= 0 ? 'cleared' : 'active';
+          const dateIssued = `${bfYear}-${String(bfMonth).padStart(2, '0')}-01`;
+
           const loanRow = await client.query(`
             INSERT INTO loans
               (member_id, principal, months, remaining_balance,
@@ -1222,7 +1222,7 @@ async function importBalances(req, res) {
             monthlyPrincipal, loanIntBF, monthlyInterest,
             janInterest, loanStatus, dateIssued,
           ]);
- 
+
           if (janPrincipal > 0 || janInterest > 0) {
             await client.query(`
               INSERT INTO loan_repayments
@@ -1231,7 +1231,7 @@ async function importBalances(req, res) {
             `, [loanRow.rows[0].id, memberId, janPrincipal, janInterest, dataMonth, dataYear]);
           }
         }
- 
+
         if (commBF > 0) {
           await client.query(
             `DELETE FROM commodity WHERE member_id=$1 AND month=$2 AND year=$3 AND description='Balance B/F'`,
@@ -1242,33 +1242,33 @@ async function importBalances(req, res) {
             VALUES ($1,$2,$3,$4,'Balance B/F')
           `, [memberId, commBF, bfMonth, bfYear]);
         }
- 
+
         const transValues = {
-          savings_bf:          savingsBF,
-          savings_add:         monthlySavings,
-          savings_add_bank:    savingsBank,
-          savings_withdrawal:  parseAmt(col(r, 'LESS: WITHDRAWAL', 'WITHDRAWAL', 'SAVINGS WITHDRAWAL')),
-          savings_cf:          parseAmt(col(r, 'NET SAVING C/F', 'SAVINGS C/F', 'SAVINGS CF', 'NET SAVINGS C/F', 'NET SAVING C F')),
-          loan_bal_bf:         loanBF,
-          loan_granted:        parseAmt(col(r, 'ADD: LOAN GRANTED ', 'ADD: LOAN GRANTED', 'LOAN GRANTED', 'ADD: LOAN GRANTED THIS MONTH', 'LOAN GRANTED THIS MONTH', 'GRANTS', 'GRANT', 'ADD LOAN GRANTED THIS MONTH')),
-          loan_repayment:      monthlyPrincipal,
+          savings_bf: savingsBF,
+          savings_add: monthlySavings,
+          savings_add_bank: savingsBank,
+          savings_withdrawal: parseAmt(col(r, 'LESS: WITHDRAWAL', 'WITHDRAWAL', 'SAVINGS WITHDRAWAL')),
+          savings_cf: parseAmt(col(r, 'NET SAVING C/F', 'SAVINGS C/F', 'SAVINGS CF', 'NET SAVINGS C/F', 'NET SAVING C F')),
+          loan_bal_bf: loanBF,
+          loan_granted: parseAmt(col(r, 'ADD: LOAN GRANTED ', 'ADD: LOAN GRANTED', 'LOAN GRANTED', 'ADD: LOAN GRANTED THIS MONTH', 'LOAN GRANTED THIS MONTH', 'GRANTS', 'GRANT', 'ADD LOAN GRANTED THIS MONTH')),
+          loan_repayment: monthlyPrincipal,
           loan_repayment_bank: loanPrinBank,
-          loan_ledger_bal:     parseAmt(col(r, 'LN LEDGER BAL.', 'LOAN LEDGER BAL.', 'LOAN LEDGER BAL', 'LOAN LEDGER BALANCE')),
-          loan_int_bf:         loanIntBF,
-          loan_int_charged:    parseAmt(r[' INT. CHARGE'] || r['INT. CHARGE'] || r['INT CHARGE'] || '0'),
-          loan_int_paid:       monthlyInterest,
-          loan_int_paid_bank:  loanIntBank,
-          loan_int_cf:         parseAmt(r['INT. BAL. C/F'] || r['LOAN INT. BAL. C/F'] || r['INT BAL C/F'] || '0'),
-          comm_bal_bf:         commBF,
-          comm_add:            commAdd,
-          comm_repayment:      commRepay,
+          loan_ledger_bal: parseAmt(col(r, 'LN LEDGER BAL.', 'LOAN LEDGER BAL.', 'LOAN LEDGER BAL', 'LOAN LEDGER BALANCE')),
+          loan_int_bf: loanIntBF,
+          loan_int_charged: parseAmt(r[' INT. CHARGE'] || r['INT. CHARGE'] || r['INT CHARGE'] || '0'),
+          loan_int_paid: monthlyInterest,
+          loan_int_paid_bank: loanIntBank,
+          loan_int_cf: parseAmt(r['INT. BAL. C/F'] || r['LOAN INT. BAL. C/F'] || r['INT BAL C/F'] || '0'),
+          comm_bal_bf: commBF,
+          comm_add: commAdd,
+          comm_repayment: commRepay,
           comm_repayment_bank: commRepayBank,
-          comm_bal_cf:         parseAmt(r['COM.  BAL. C/F'] || r['COM. BAL. C/F'] || r['COMM BAL C/F'] || '0'),
-          form:                formFee,
-          other_charges:       otherCharges,
-          total_deduction:     totalDeduction,
+          comm_bal_cf: parseAmt(r['COM.  BAL. C/F'] || r['COM. BAL. C/F'] || r['COMM BAL C/F'] || '0'),
+          form: formFee,
+          other_charges: otherCharges,
+          total_deduction: totalDeduction,
         };
- 
+
         for (const [column_key, amount] of Object.entries(transValues)) {
           await client.query(`
             INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
@@ -1277,7 +1277,7 @@ async function importBalances(req, res) {
             DO UPDATE SET amount=EXCLUDED.amount, updated_at=NOW()
           `, [memberId, column_key, amount, dataMonth, dataYear]);
         }
- 
+
         await client.query('COMMIT');
         imported++;
       } catch (e) {
@@ -1288,7 +1288,7 @@ async function importBalances(req, res) {
         client.release();
       }
     }
- 
+
     console.log('Balances import successful:', { imported, skipped, errors });
     res.json({
       ok: true,
@@ -1304,7 +1304,7 @@ async function importBalances(req, res) {
 // ── Personal Ledger: full year view per member ────────────────────────────────
 async function getMemberLedger(req, res) {
   const memberId = parseInt(req.params.id);
-  const year     = parseInt(req.query.year) || new Date().getFullYear();
+  const year = parseInt(req.query.year) || new Date().getFullYear();
 
   try {
     const transRes = await db.query(
@@ -1494,8 +1494,8 @@ async function emailMonthlyReports(req, res) {
   }
 }
 
-module.exports = { 
-  getMembers, getMember, createMember, updateMember, deleteMember, 
+module.exports = {
+  getMembers, getMember, createMember, updateMember, deleteMember,
   importCSV, importBalances, getMemberLedger,
   getDeactivatedMembers, reactivateMember,
   emailMemberMonthlyReport, emailMonthlyReports
