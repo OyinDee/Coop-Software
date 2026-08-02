@@ -1016,6 +1016,20 @@ async function generateNextMonth(req, res) {
       return res.status(400).json({ error: `No data found for ${MONTH_NAMES[srcMonth - 1]} ${srcYear}.` });
     }
 
+    // Guard: Prevent auto-generating from Opening Balance months (which have 0 monthly deductions)
+    const dedSumRes = await db.query(
+      `SELECT COALESCE(SUM(amount), 0) AS total 
+       FROM monthly_trans 
+       WHERE month=$1 AND year=$2 
+       AND column_key IN ('savings_add', 'loan_repayment', 'loan_int_paid', 'comm_repayment')`,
+      [srcMonth, srcYear]
+    );
+    if (parseFloat(dedSumRes.rows[0]?.total || 0) === 0) {
+      return res.status(400).json({
+        error: `${MONTH_NAMES[srcMonth - 1]} ${srcYear} contains Opening Balances only (0 monthly deductions). Please upload the ${MONTH_NAMES[tgtMonth - 1]} ${tgtYear} deductions file using 'Upload CSV'. 'Generate From Last Month' is available starting from February onwards once your first deduction sheet is uploaded.`
+      });
+    }
+
     const rateRes = await db.query("SELECT value FROM app_settings WHERE key='loan_interest_rate'");
     const interestRate = parseFloat(rateRes.rows[0]?.value || '5') / 100;
 
@@ -1044,29 +1058,29 @@ async function generateNextMonth(req, res) {
       const bulkRows = [];
       
       for (const [memberId, prev] of Object.entries(memberData)) {
-        const savings_bf           = g(prev, 'savings_cf');
+        const savings_bf           = g(prev, 'savings_cf') || g(prev, 'savings_bf');
         const savings_add          = g(prev, 'savings_add');
         const savings_add_bank     = 0;
         const savings_withdrawal   = g(prev, 'savings_withdrawal');
         const savings_cf           = savings_bf + savings_add + savings_add_bank - savings_withdrawal;
 
-        const loan_bal_bf          = g(prev, 'loan_ledger_bal');
+        const loan_bal_bf          = g(prev, 'loan_ledger_bal') || g(prev, 'loan_bal_bf');
         const loan_granted         = 0;
         const loan_repayment       = g(prev, 'loan_repayment');
         const loan_repayment_bank  = 0;
-        const loan_ledger_bal      = loan_bal_bf + loan_granted - loan_repayment - loan_repayment_bank;
+        const loan_ledger_bal      = Math.max(0, loan_bal_bf + loan_granted - loan_repayment - loan_repayment_bank);
 
-        const loan_int_bf          = g(prev, 'loan_int_cf');
+        const loan_int_bf          = g(prev, 'loan_int_cf') || g(prev, 'loan_int_bf');
         const loan_int_charged     = loan_granted > 0 ? Math.round(loan_granted * interestRate * 100) / 100 : 0;
         const loan_int_paid        = g(prev, 'loan_int_paid');
         const loan_int_paid_bank   = 0;
-        const loan_int_cf          = loan_int_bf + loan_int_charged - loan_int_paid - loan_int_paid_bank;
+        const loan_int_cf          = Math.max(0, loan_int_bf + loan_int_charged - loan_int_paid - loan_int_paid_bank);
 
-        const comm_bal_bf          = g(prev, 'comm_bal_cf');
+        const comm_bal_bf          = g(prev, 'comm_bal_cf') || g(prev, 'comm_bal_bf');
         const comm_add             = 0;
         const comm_repayment       = g(prev, 'comm_repayment');
         const comm_repayment_bank  = 0;
-        const comm_bal_cf          = comm_bal_bf + comm_add - comm_repayment - comm_repayment_bank;
+        const comm_bal_cf          = Math.max(0, comm_bal_bf + comm_add - comm_repayment - comm_repayment_bank);
 
         const form                 = 0;
         const other_charges        = 0;
