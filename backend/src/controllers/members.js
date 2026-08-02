@@ -1071,7 +1071,12 @@ async function importBalances(req, res) {
  
       // ── Skip header/summary rows ───────────────────────────────────────
       const sn = (r['S/N'] || r['S/N.'] || '').replace(/\s/g, '');
-      if (!/^\d+$/.test(sn)) { skipped++; continue; }
+      if (sn !== '' && !/^\d+$/.test(sn)) { skipped++; continue; }
+
+      const rowName = (r['NAME'] || r['FULL NAME'] || '').toUpperCase();
+      if (rowName.startsWith('TOTAL') || rowName.startsWith('GRAND TOTAL') || rowName.startsWith('SUMMARY')) {
+        skipped++; continue;
+      }
  
       // ── Identifiers ────────────────────────────────────────────────────
       const ledger_no = (
