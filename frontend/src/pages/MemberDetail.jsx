@@ -33,7 +33,7 @@ export default function MemberDetail() {
   const [savingsOpen, setSavingsOpen] = useState(false);
   const [savingsForm, setSavingsForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', is_bank: false });
   const [commOpen, setCommOpen] = useState(false);
-  const [commForm, setCommForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
+  const [commForm, setCommForm] = useState({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '', repayment_is_bank: false });
   const [repayOpen, setRepayOpen] = useState(false);
   const [repayLoanId, setRepayLoanId] = useState(null);
   const [repayForm, setRepayForm] = useState({ principal_paid: '', interest_paid: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', is_bank: false });
@@ -112,7 +112,7 @@ export default function MemberDetail() {
     try {
       await api.post('/commodity', { member_id: id, ...commForm });
       toast('Commodity recorded'); setCommOpen(false);
-      setCommForm({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '' });
+      setCommForm({ amount: '', month: new Date().getMonth() + 1, year: new Date().getFullYear(), description: '', monthly_repayment: '', repayment_is_bank: false });
       load(); loadLedger(ledgerYear);
     } catch (err) { toast(err.response?.data?.error || 'Error', 'error'); }
     finally { setSaving(false); }
@@ -788,6 +788,13 @@ export default function MemberDetail() {
             <div className="form-group">
               <label className="form-label">Monthly Repayment (₦)</label>
               <input className="form-input" type="number" step="0.01" placeholder="How much deducted per month" value={commForm.monthly_repayment} onChange={(e) => setCommForm({ ...commForm, monthly_repayment: e.target.value })} />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Repayment Method</label>
+              <select className="form-input" value={commForm.repayment_is_bank ? "true" : "false"} onChange={(e) => setCommForm({ ...commForm, repayment_is_bank: e.target.value === "true" })}>
+                <option value="false">Salary Deduction (Cash/Standard)</option>
+                <option value="true">Bank Transfer / Direct Deposit (Bank)</option>
+              </select>
             </div>
             <div className="form-group">
               <label className="form-label">Description</label>

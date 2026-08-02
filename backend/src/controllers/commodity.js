@@ -73,7 +73,7 @@ async function getMemberCommodity(req, res) {
 }
 
 async function createCommodity(req, res) {
-  const { member_id, amount, description, month, year, monthly_repayment } = req.body;
+  const { member_id, amount, description, month, year, monthly_repayment, repayment_is_bank } = req.body;
   if (!member_id || !amount || !month || !year) {
     return res.status(400).json({ error: 'member_id, amount, month, year required' });
   }
@@ -83,18 +83,28 @@ async function createCommodity(req, res) {
     await client.query('BEGIN');
 
     const result = await client.query(
-      'INSERT INTO commodity (member_id, amount, description, month, year) VALUES ($1,$2,$3,$4,$5) RETURNING *',
-      [member_id, amount, description, month, year]
+      'INSERT INTO commodity (member_id, amount, description, month, year, repayment_is_bank) VALUES ($1,$2,$3,$4,$5,$6) RETURNING *',
+      [member_id, amount, description, month, year, repayment_is_bank || false]
     );
 
-    // If a monthly repayment was specified, set comm_repayment for this month
+    // If a monthly repayment was specified, set comm_repayment or comm_repayment_bank
     if (monthly_repayment && parseFloat(monthly_repayment) > 0) {
+      const activeKey = repayment_is_bank ? 'comm_repayment_bank' : 'comm_repayment';
+      const inactiveKey = repayment_is_bank ? 'comm_repayment' : 'comm_repayment_bank';
+
       await client.query(`
         INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
-        VALUES ($1, 'comm_repayment', $2, $3, $4)
+        VALUES ($1, $2, $3, $4, $5)
         ON CONFLICT (member_id, column_key, month, year)
         DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
-      `, [member_id, parseFloat(monthly_repayment), parseInt(month), parseInt(year)]);
+      `, [member_id, activeKey, parseFloat(monthly_repayment), parseInt(month), parseInt(year)]);
+
+      await client.query(`
+        INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+        VALUES ($1, $2, 0, $3, $4)
+        ON CONFLICT (member_id, column_key, month, year)
+        DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
+      `, [member_id, inactiveKey, parseInt(month), parseInt(year)]);
     }
 
     // Sync comm_add from commodity table total and recalculate comm_bal_cf
