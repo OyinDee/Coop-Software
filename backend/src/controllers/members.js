@@ -63,18 +63,18 @@ async function loadMonthlyValues(memberId, month, year) {
   return values;
 }
 
-function buildLedgerRows({ byMonth, sharesMap, sharesBF }) {
+function buildLedgerRows({ byMonth, sharesMap, sharesBF, initialBF = {} }) {
   const months = Array.from({ length: 12 }, (_, i) => i + 1);
   const firstDataMonth = months.find((month) => byMonth[month]);
   const firstData = firstDataMonth ? (byMonth[firstDataMonth] || {}) : {};
 
   const bf = {
-    savings_bf: toNumber(firstData.savings_bf || 0),
-    savings_bank_bf: toNumber(firstData.savings_bank_bf || 0),
+    savings_bf: toNumber(firstData.savings_bf || initialBF.savings_bf || 0),
+    savings_bank_bf: toNumber(firstData.savings_bank_bf || initialBF.savings_bank_bf || 0),
     shares_bf: sharesBF,
-    loan_bal_bf: toNumber(firstData.loan_bal_bf || 0),
-    loan_int_bf: toNumber(firstData.loan_int_bf || 0),
-    comm_bal_bf: toNumber(firstData.comm_bal_bf || 0),
+    loan_bal_bf: toNumber(firstData.loan_bal_bf || initialBF.loan_bal_bf || 0),
+    loan_int_bf: toNumber(firstData.loan_int_bf || initialBF.loan_int_bf || 0),
+    comm_bal_bf: toNumber(firstData.comm_bal_bf || initialBF.comm_bal_bf || 0),
   };
 
   let savingsCarry = bf.savings_bf;
@@ -1331,6 +1331,31 @@ async function getMemberLedger(req, res) {
       byMonth[r.month][r.column_key] = parseFloat(r.amount) || 0;
     }
 
+    // Fetch prior year's ending balances (or latest prior month) if current year Month 1 has no B/F entries yet
+    const priorTransRes = await db.query(
+      `SELECT column_key, amount FROM monthly_trans
+       WHERE member_id=$1 AND year < $2
+       ORDER BY year DESC, month DESC`,
+      [memberId, year]
+    );
+
+    const initialBF = {
+      savings_bf: 0,
+      loan_bal_bf: 0,
+      loan_int_bf: 0,
+      comm_bal_bf: 0,
+    };
+
+    for (const r of priorTransRes.rows) {
+      const amt = parseFloat(r.amount) || 0;
+      if (amt > 0) {
+        if ((r.column_key === 'savings_cf' || r.column_key === 'savings_bf') && !initialBF.savings_bf) initialBF.savings_bf = amt;
+        if ((r.column_key === 'loan_ledger_bal' || r.column_key === 'loan_bal_bf') && !initialBF.loan_bal_bf) initialBF.loan_bal_bf = amt;
+        if ((r.column_key === 'loan_int_cf' || r.column_key === 'loan_int_bf') && !initialBF.loan_int_bf) initialBF.loan_int_bf = amt;
+        if ((r.column_key === 'comm_bal_cf' || r.column_key === 'comm_bal_bf') && !initialBF.comm_bal_bf) initialBF.comm_bal_bf = amt;
+      }
+    }
+
     const sharesRes = await db.query(
       `SELECT month, amount FROM shares WHERE member_id=$1 AND year=$2`,
       [memberId, year]
@@ -1344,7 +1369,7 @@ async function getMemberLedger(req, res) {
     );
     const sharesBF = parseFloat(sharesBFRes.rows[0].total) || 0;
 
-    const ledger = buildLedgerRows({ byMonth, sharesMap, sharesBF });
+    const ledger = buildLedgerRows({ byMonth, sharesMap, sharesBF, initialBF });
 
     const yearsRes = await db.query(
       `SELECT DISTINCT year FROM monthly_trans WHERE member_id=$1
@@ -1352,7 +1377,11 @@ async function getMemberLedger(req, res) {
        ORDER BY year DESC`,
       [memberId]
     );
-    const availableYears = yearsRes.rows.map((r) => r.year);
+    let availableYears = yearsRes.rows.map((r) => r.year);
+    if (!availableYears.includes(year)) {
+      availableYears.push(year);
+      availableYears.sort((a, b) => b - a);
+    }
 
     res.json({ rows: ledger.rows, bf: ledger.bf, summary: ledger.summary, year, availableYears });
   } catch (err) {
