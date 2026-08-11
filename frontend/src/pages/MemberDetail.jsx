@@ -523,11 +523,11 @@ export default function MemberDetail() {
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>LOAN BAL.</div>
-              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>{fmtNGN(ledgerSumm.loan_bal ?? 0)}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>{fmtNGN(member?.loan_balance ?? 0)}</div>
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>INT. TO PAY</div>
-              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.int_to_pay ?? 0)}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(member?.interest_due ?? 0)}</div>
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>BALANCE</div>
@@ -552,11 +552,11 @@ export default function MemberDetail() {
         </div>
         <div className="stat-card red" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Loan Balance</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.loan_bal ?? member.loan_balance)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(member?.loan_balance ?? 0)}</div>
         </div>
         <div className="stat-card amber" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Interest Due</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.int_to_pay ?? member.interest_due)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(member?.interest_due ?? 0)}</div>
         </div>
         <div className="stat-card" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Commodity Bal.</div>
