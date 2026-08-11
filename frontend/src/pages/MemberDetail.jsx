@@ -523,15 +523,15 @@ export default function MemberDetail() {
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>LOAN BAL.</div>
-              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>{fmtNGN(ledgerSumm.loan_bal || 0)}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--red)' }}>{fmtNGN(ledgerSumm.loan_bal ?? 0)}</div>
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>INT. TO PAY</div>
-              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.int_to_pay || 0)}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.int_to_pay ?? 0)}</div>
             </div>
             <div>
               <div style={{ fontSize: 9, color: 'var(--muted)', letterSpacing: 1, marginBottom: 2 }}>BALANCE</div>
-              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.balance || 0)}</div>
+              <div style={{ fontFamily: 'var(--mono)', fontWeight: 700, fontSize: 14, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.balance ?? 0)}</div>
             </div>
             <div style={{ marginLeft: 'auto', fontSize: 10, color: 'var(--faint)', fontFamily: 'var(--mono)' }}>
               {nowLabel}
@@ -544,23 +544,23 @@ export default function MemberDetail() {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 12, marginBottom: 14 }}>
         <div className="stat-card green" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Savings</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.net_savings || member.total_savings)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.net_savings ?? member.total_savings)}</div>
         </div>
         <div className="stat-card blue" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Shares</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.total_shares || member.total_shares)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.total_shares ?? member.total_shares)}</div>
         </div>
         <div className="stat-card red" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Loan Balance</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.loan_bal || member.loan_balance)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.loan_bal ?? member.loan_balance)}</div>
         </div>
         <div className="stat-card amber" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Interest Due</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.int_to_pay || member.interest_due)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(ledgerSumm.int_to_pay ?? member.interest_due)}</div>
         </div>
         <div className="stat-card" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Commodity Bal.</div>
-          <div className="stat-value" style={{ fontSize: 17, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.balance || member.total_commodity)}</div>
+          <div className="stat-value" style={{ fontSize: 17, color: 'var(--amber)' }}>{fmtNGN(ledgerSumm.balance ?? member.total_commodity)}</div>
         </div>
       </div>
 
