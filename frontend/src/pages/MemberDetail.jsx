@@ -595,7 +595,7 @@ export default function MemberDetail() {
             <table>
               <thead>
                 <tr>
-                  <th>Loan #</th><th>Opening Balance</th><th>Remaining</th>
+                  <th>Loan #</th><th>Month Issued</th><th>Opening Balance</th><th>Remaining</th>
                   <th>Repaid Since Entry</th><th>Monthly Repayment</th><th>Total Interest ({displayRatePct}%)</th>
                   <th>Monthly Interest</th><th>Interest Paid</th><th>Status</th><th></th>
                 </tr>
@@ -604,6 +604,9 @@ export default function MemberDetail() {
                 {loans.map((l, i) => (
                   <tr key={l.id}>
                     <td className="td-mono td-muted">Loan {i + 1}</td>
+                    <td className="td-muted" style={{ fontSize: 11 }}>
+                      {l.date_issued ? `${MONTH_LABELS[new Date(l.date_issued).getUTCMonth()]} ${new Date(l.date_issued).getUTCFullYear()}` : '—'}
+                    </td>
                     <td>{fmtNGN(l.principal)}</td>
                     <td className={l.status === 'active' ? 'td-red' : 'td-green'}>{fmtNGN(l.remaining_balance)}</td>
                     <td>{fmtNGN(parseFloat(l.principal) - parseFloat(l.remaining_balance))}</td>

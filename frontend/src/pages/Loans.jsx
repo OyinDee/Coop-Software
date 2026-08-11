@@ -8,6 +8,13 @@ import { useToast } from '../context/ToastContext';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
 
+function formatLoanMonth(value) {
+  if (!value) return '—';
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return '—';
+  return `${MONTHS[d.getUTCMonth()]} ${d.getUTCFullYear()}`;
+}
+
 // ── Repayment history + record modal ─────────────────────────────────────────
 function RepaymentModal({ loanId, onClose, onRefresh }) {
   const toast = useToast();
@@ -307,7 +314,7 @@ export default function Loans() {
                   <th>Member</th><th>Ledger No</th><th>Principal B/F</th><th>Remaining</th>
                   <th>Monthly Repayment</th>
                   <th>Total Interest</th><th>Monthly Interest</th><th>Interest Paid</th>
-                  <th>Date Issued</th><th>Status</th><th></th>
+                  <th>Month Issued</th><th>Date Issued</th><th>Status</th><th></th>
                 </tr>
               </thead>
               <tbody>
@@ -321,6 +328,7 @@ export default function Loans() {
                     <td className="td-amber">{fmtNGN(l.total_interest)}</td>
                     <td className="td-amber">{fmtNGN(l.monthly_interest)}</td>
                     <td className="td-green">{fmtNGN(l.interest_paid)}</td>
+                    <td className="td-muted" style={{ fontSize: 11 }}>{formatLoanMonth(l.date_issued)}</td>
                     <td className="td-muted" style={{ fontSize: 11 }}>{fmtDate(l.date_issued)}</td>
                     <td><span className={`badge badge-${l.status === 'active' ? 'amber' : 'red'}`}>
                       {l.status === 'active' ? 'Active' : 'Int. Due'}
