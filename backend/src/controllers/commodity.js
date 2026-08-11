@@ -2,6 +2,11 @@ const db = require('../db');
 
 const { propagateMemberBalances } = require('../utils/propagateBalances');
 
+function getPreviousMonthYear(month, year) {
+  if (month === 1) return { month: 12, year: year - 1 };
+  return { month: month - 1, year };
+}
+
 // Helper: sync comm_add from commodity table and recalculate comm_bal_cf
 async function recalcCommTrans(client, member_id, month, year) {
   const m = parseInt(month), y = parseInt(year);
@@ -20,16 +25,39 @@ async function recalcCommTrans(client, member_id, month, year) {
     DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
   `, [member_id, comm_add, m, y]);
 
-  // Get B/F and repayment values
-  const res = await client.query(`
+  // Seed the opening commodity balance from the prior month close if the
+  // current month has no explicit B/F row. That prevents the commodity report
+  // from starting a fresh balance from 0 in the next month.
+  const prev = getPreviousMonthYear(m, y);
+  const prevCarryRes = await client.query(`
+    SELECT amount FROM monthly_trans
+    WHERE member_id=$1 AND month=$2 AND year=$3
+      AND column_key IN ('comm_bal_cf', 'comm_bal_bf')
+    ORDER BY CASE column_key WHEN 'comm_bal_cf' THEN 1 ELSE 2 END
+    LIMIT 1
+  `, [member_id, prev.month, prev.year]);
+
+  const existingRes = await client.query(`
     SELECT column_key, amount FROM monthly_trans
     WHERE member_id=$1 AND month=$2 AND year=$3
       AND column_key IN ('comm_bal_bf', 'comm_repayment', 'comm_repayment_bank')
   `, [member_id, m, y]);
-  const v = {};
-  for (const r of res.rows) v[r.column_key] = parseFloat(r.amount) || 0;
 
-  const commBefore  = (v.comm_bal_bf || 0) + comm_add;
+  const prevCarry = parseFloat(prevCarryRes.rows[0]?.amount) || 0;
+  const v = {};
+  for (const r of existingRes.rows) v[r.column_key] = parseFloat(r.amount) || 0;
+
+  const inputBf = v.comm_bal_bf ?? prevCarry;
+  const comm_bal_bf = Math.max(0, parseFloat(inputBf) || 0);
+
+  await client.query(`
+    INSERT INTO monthly_trans (member_id, column_key, amount, month, year)
+    VALUES ($1, 'comm_bal_bf', $2, $3, $4)
+    ON CONFLICT (member_id, column_key, month, year)
+    DO UPDATE SET amount = EXCLUDED.amount, updated_at = NOW()
+  `, [member_id, comm_bal_bf, m, y]);
+
+  const commBefore  = comm_bal_bf + comm_add;
   const effRepay    = Math.min(v.comm_repayment || 0, commBefore);
   const effRepayBnk = Math.min(v.comm_repayment_bank || 0, Math.max(0, commBefore - effRepay));
   const comm_bal_cf = Math.max(0, commBefore - effRepay - effRepayBnk);
