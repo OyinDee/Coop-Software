@@ -3,7 +3,7 @@ import { useParams, useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Modal from '../components/Modal';
 import api from '../api';
-import { fmtNGN, fmtDate, calcLoan } from '../utils/format';
+import { fmtNGN, fmtDate, calcLoan, loanPrincipalRepaid, loanPrincipalRemaining } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
 const LOAN_FORM = { principal: '', months: '', monthly_payment: '' };
@@ -122,7 +122,15 @@ export default function MemberDetail() {
     if (!window.confirm('Delete this loan?')) return;
     try {
       await api.delete(`/loans/${loanId}`);
-      toast('Loan deleted'); load();
+      toast('Loan deleted'); load(); loadLedger(ledgerYear);
+    } catch { toast('Error', 'error'); }
+  };
+
+  const handleDeleteCommodity = async (commodityId) => {
+    if (!window.confirm('Delete this commodity entry?')) return;
+    try {
+      await api.delete(`/commodity/${commodityId}`);
+      toast('Commodity deleted'); load(); loadLedger(ledgerYear);
     } catch { toast('Error', 'error'); }
   };
 
@@ -240,6 +248,7 @@ export default function MemberDetail() {
 
   const member = data?.member;
   const loans = data?.loans || [];
+  const commodities = data?.commodity || [];
   const activeLoans = loans.filter((l) => l.status === 'active');
   const totalMonthlyPrincipal = activeLoans.reduce((s, l) => s + parseFloat(l.monthly_principal), 0);
   const totalMonthlyInterest = activeLoans.reduce((s, l) => s + parseFloat(l.monthly_interest), 0);
@@ -249,6 +258,7 @@ export default function MemberDetail() {
   const ledgerRows  = ledger?.rows || [];
   const ledgerBF    = ledger?.bf || {};
   const ledgerSumm  = ledger?.summary || {};
+  const totalLoanBalance = ledgerSumm.loan_bal ?? activeLoans.reduce((s, l) => s + loanPrincipalRemaining(l), 0);
   const availYears  = ledger?.availableYears || [];
   const colSum = (key) => ledgerRows.reduce((s, r) => s + (r[key] || 0), 0);
   const now = new Date();
@@ -552,7 +562,7 @@ export default function MemberDetail() {
         </div>
         <div className="stat-card red" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Loan Balance</div>
-          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(member?.loan_balance ?? 0)}</div>
+          <div className="stat-value" style={{ fontSize: 17 }}>{fmtNGN(totalLoanBalance)}</div>
         </div>
         <div className="stat-card amber" style={{ padding: '14px 18px' }}>
           <div className="stat-label">Interest Due</div>
@@ -608,8 +618,8 @@ export default function MemberDetail() {
                       {l.date_issued ? `${MONTH_LABELS[new Date(l.date_issued).getUTCMonth()]} ${new Date(l.date_issued).getUTCFullYear()}` : '—'}
                     </td>
                     <td>{fmtNGN(l.principal)}</td>
-                    <td className={l.status === 'active' ? 'td-red' : 'td-green'}>{fmtNGN(l.remaining_balance)}</td>
-                    <td>{fmtNGN(parseFloat(l.principal) - parseFloat(l.remaining_balance))}</td>
+                    <td className={l.status === 'active' ? 'td-red' : 'td-green'}>{fmtNGN(loanPrincipalRemaining(l))}</td>
+                    <td>{fmtNGN(loanPrincipalRepaid(l))}</td>
                     <td>{fmtNGN(parseFloat(l.monthly_principal) + parseFloat(l.monthly_interest))}</td>
                     <td className="td-amber">{fmtNGN(l.total_interest)}</td>
                     <td className="td-amber">{fmtNGN(l.monthly_interest)}</td>
@@ -647,6 +657,41 @@ export default function MemberDetail() {
                 {' '}| <strong>{fmtNGN(totalMonthlyInterest)} / month</strong> combined
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Commodity table */}
+      <div className="card">
+        <div className="card-title">Commodity ({commodities.length})</div>
+        {commodities.length === 0 ? (
+          <div style={{ color: 'var(--faint)', fontSize: 12, textAlign: 'center', paddingBottom: 8 }}>No commodity entries</div>
+        ) : (
+          <div style={{ overflowX: 'auto' }}>
+            <table>
+              <thead>
+                <tr>
+                  <th>Month Issued</th><th>Amount</th><th>Description</th><th>Repayment</th><th></th>
+                </tr>
+              </thead>
+              <tbody>
+                {commodities.map((c) => (
+                  <tr key={c.id}>
+                    <td className="td-muted" style={{ fontSize: 11 }}>
+                      {MONTH_LABELS[c.month - 1]} {c.year}
+                    </td>
+                    <td style={{ color: 'var(--amber)' }}>{fmtNGN(c.amount)}</td>
+                    <td className="td-muted">{c.description || '—'}</td>
+                    <td className="td-muted" style={{ fontSize: 11 }}>
+                      {c.repayment_is_bank ? 'Bank' : 'Cash'}
+                    </td>
+                    <td>
+                      <button className="btn btn-danger btn-sm" onClick={() => handleDeleteCommodity(c.id)}>X</button>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
           </div>
         )}
       </div>

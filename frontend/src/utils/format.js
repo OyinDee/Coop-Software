@@ -40,3 +40,21 @@ export function calcLoan({ principal, months, monthlyPayment, rate = 0.05 }) {
     total_payable: p + total_interest,
   };
 }
+
+/** Principal repaid on a single loan (from repayment records when available). */
+export function loanPrincipalRepaid(loan) {
+  const principal = parseFloat(loan.principal) || 0;
+  if (loan.principal_repaid != null) {
+    return Math.min(principal, Math.max(0, parseFloat(loan.principal_repaid) || 0));
+  }
+  const remaining = parseFloat(loan.remaining_balance) || 0;
+  if (remaining <= principal) return Math.max(0, principal - remaining);
+  const fromMonths = (parseFloat(loan.months_paid) || 0) * (parseFloat(loan.monthly_principal) || 0);
+  return Math.min(principal, Math.max(0, fromMonths));
+}
+
+/** Principal still owed on a single loan. */
+export function loanPrincipalRemaining(loan) {
+  const principal = parseFloat(loan.principal) || 0;
+  return Math.max(0, principal - loanPrincipalRepaid(loan));
+}

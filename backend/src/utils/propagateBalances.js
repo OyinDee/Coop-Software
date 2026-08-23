@@ -121,11 +121,28 @@ async function propagateMemberBalances(client, memberId, fromMonth, fromYear) {
     }
   }
 
-  // 5. Update the loans table remaining_balance to match the latest C/F
-  await client.query(`
-    UPDATE loans SET remaining_balance = $1, updated_at = NOW()
-    WHERE member_id = $2 AND status = 'active'
-  `, [carryLoan, memberId]);
+  // Only sync ledger balance when the member has a single active loan.
+  // With multiple loans, each loan's remaining_balance is tracked individually.
+  const activeLoansRes = await client.query(
+    `SELECT COUNT(*)::int AS cnt FROM loans WHERE member_id = $1 AND status = 'active'`,
+    [memberId]
+  );
+  if (activeLoansRes.rows[0].cnt === 1) {
+    await client.query(`
+      UPDATE loans SET remaining_balance = $1, updated_at = NOW()
+      WHERE member_id = $2 AND status = 'active'
+    `, [carryLoan, memberId]);
+  } else if (activeLoansRes.rows[0].cnt > 1) {
+    // Restore per-loan balances from repayment history when member has multiple loans.
+    await client.query(`
+      UPDATE loans l
+      SET remaining_balance = GREATEST(0, l.principal - COALESCE((
+        SELECT SUM(principal_paid) FROM loan_repayments lr WHERE lr.loan_id = l.id
+      ), 0)),
+      updated_at = NOW()
+      WHERE l.member_id = $1 AND l.status = 'active'
+    `, [memberId]);
+  }
 }
 
 module.exports = { propagateMemberBalances };

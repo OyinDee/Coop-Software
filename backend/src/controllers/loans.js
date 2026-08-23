@@ -36,6 +36,9 @@ async function getLoans(req, res) {
   try {
     const result = await db.query(`
       SELECT l.*, m.full_name, m.ledger_no,
+        COALESCE((
+          SELECT SUM(principal_paid) FROM loan_repayments WHERE loan_id = l.id
+        ), 0) AS principal_repaid,
         CASE 
           WHEN l.months_remaining > 0 THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
           ELSE 0
@@ -56,12 +59,15 @@ async function getMemberLoans(req, res) {
   const { memberId } = req.params;
   try {
     const result = await db.query(
-      `SELECT *, 
+      `SELECT l.*,
+        COALESCE((
+          SELECT SUM(principal_paid) FROM loan_repayments WHERE loan_id = l.id
+        ), 0) AS principal_repaid,
         CASE 
-          WHEN months_remaining > 0 THEN ROUND(remaining_balance / GREATEST(1, months_remaining)::numeric, 2)
+          WHEN l.months_remaining > 0 THEN ROUND(l.remaining_balance / GREATEST(1, l.months_remaining)::numeric, 2)
           ELSE 0
         END as calculated_monthly_payment
-       FROM loans WHERE member_id = $1 ORDER BY created_at ASC`,
+       FROM loans l WHERE l.member_id = $1 ORDER BY l.created_at ASC`,
       [memberId]
     );
     res.json({ loans: result.rows });

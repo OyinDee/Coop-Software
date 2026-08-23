@@ -3,7 +3,7 @@ import { useNavigate } from 'react-router-dom';
 import Layout from '../components/Layout';
 import Modal  from '../components/Modal';
 import api    from '../api';
-import { fmtNGN, fmtDate } from '../utils/format';
+import { fmtNGN, fmtDate, loanPrincipalRemaining } from '../utils/format';
 import { useToast } from '../context/ToastContext';
 
 const MONTHS = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
@@ -101,7 +101,7 @@ function RepaymentModal({ loanId, onClose, onRefresh }) {
           }}>
             {[
               { label: 'Opening Bal.',    value: fmtNGN(loan.principal) },
-              { label: 'Remaining',     value: fmtNGN(loan.remaining_balance), red: true },
+              { label: 'Remaining',     value: fmtNGN(loanPrincipalRemaining(loan)), red: true },
               { label: 'Monthly (Sched.)', value: fmtNGN(scheduledRepayment) },
               { label: 'Status',        value: loan.status === 'active' ? 'Active' : 'Cleared',
                 color: loan.status === 'active' ? 'var(--amber)' : 'var(--green)' },
@@ -268,7 +268,7 @@ export default function Loans() {
   useEffect(() => { load(); }, []);
 
   const totals = loans.reduce((acc, l) => ({
-    balance: acc.balance + parseFloat(l.remaining_balance),
+    balance: acc.balance + loanPrincipalRemaining(l),
     interest: acc.interest + parseFloat(l.total_interest) - parseFloat(l.interest_paid),
     monthly_repayment: acc.monthly_repayment + parseFloat(l.monthly_principal) + parseFloat(l.monthly_interest),
     monthly_i: acc.monthly_i + parseFloat(l.monthly_interest),
@@ -323,7 +323,7 @@ export default function Loans() {
                     <td>{l.full_name}</td>
                     <td className="td-mono td-gold">{l.ledger_no}</td>
                     <td>{fmtNGN(l.principal)}</td>
-                    <td className="td-red">{fmtNGN(l.remaining_balance)}</td>
+                    <td className="td-red">{fmtNGN(loanPrincipalRemaining(l))}</td>
                     <td>{fmtNGN(parseFloat(l.monthly_principal) + parseFloat(l.monthly_interest))}</td>
                     <td className="td-amber">{fmtNGN(l.total_interest)}</td>
                     <td className="td-amber">{fmtNGN(l.monthly_interest)}</td>

@@ -699,7 +699,16 @@ async function getMember(req, res) {
           ) AS total_savings,
         COALESCE((SELECT SUM(shares.amount) FROM shares WHERE shares.member_id = m.id), 0) AS total_shares,
         COALESCE((SELECT SUM(c.amount) FROM commodity c WHERE c.member_id = m.id), 0) AS total_commodity,
-        COALESCE((SELECT SUM(l.remaining_balance) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS loan_balance,
+        COALESCE(
+          (SELECT mt.amount FROM monthly_trans mt
+           WHERE mt.member_id = m.id AND mt.column_key = 'loan_ledger_bal'
+           ORDER BY mt.year DESC, mt.month DESC LIMIT 1),
+          (SELECT SUM(GREATEST(0, l.principal - COALESCE((
+            SELECT SUM(principal_paid) FROM loan_repayments lr WHERE lr.loan_id = l.id
+          ), 0)))
+           FROM loans l WHERE l.member_id = m.id AND l.status = 'active'),
+          0
+        ) AS loan_balance,
         COALESCE((SELECT SUM(l.total_interest - l.interest_paid) FROM loans l WHERE l.member_id = m.id AND l.status = 'active'), 0) AS interest_due,
         (SELECT COUNT(*) FROM loans l WHERE l.member_id = m.id AND l.status = 'active') AS active_loans
       FROM members m
@@ -709,7 +718,13 @@ async function getMember(req, res) {
     if (!memberResult.rows[0]) return res.status(404).json({ error: 'Member not found' });
 
     const loansResult = await db.query(`
-      SELECT * FROM loans WHERE member_id = $1 ORDER BY created_at ASC
+      SELECT l.*,
+        COALESCE((
+          SELECT SUM(principal_paid) FROM loan_repayments WHERE loan_id = l.id
+        ), 0) AS principal_repaid
+      FROM loans l
+      WHERE l.member_id = $1
+      ORDER BY l.created_at ASC
     `, [id]);
 
     const savingsResult = await db.query(`
