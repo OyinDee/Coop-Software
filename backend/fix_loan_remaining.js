@@ -2,11 +2,14 @@
  * Repair per-loan remaining_balance from repayment history.
  * Run when multiple active loans were incorrectly given the member's total ledger balance.
  */
-require('dotenv').config();
-const db = require('./src/db');
+const { Client } = require('pg');
+require('dotenv').config({ path: './.env' });
 
-async function fixLoanRemaining() {
-  const client = await db.getClient();
+async function run() {
+  const client = new Client({ connectionString: process.env.DATABASE_URL });
+  await client.connect();
+  console.log('Connected to DB');
+
   try {
     await client.query('BEGIN');
 
@@ -41,9 +44,8 @@ async function fixLoanRemaining() {
     console.error('Repair failed:', err.message);
     process.exit(1);
   } finally {
-    client.release();
-    await db.pool.end();
+    await client.end();
   }
 }
 
-fixLoanRemaining();
+run();
