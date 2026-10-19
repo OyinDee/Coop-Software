@@ -22,6 +22,11 @@ const ADMIN_NAV = [
   { label: 'Settings', to: '/settings' },
 ];
 
+const PAYROLL_NAV = [
+  { label: 'Deductions', to: '/deductions' },
+  { label: 'Email Reports', to: '/ledger' },
+];
+
 function NavDropdown({ label, items }) {
   const [isOpen, setIsOpen] = useState(false);
   const dropdownRef = useRef(null);
@@ -105,6 +110,8 @@ export default function TopNav() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const isPayroll = admin?.role === 'payroll';
+  const navigation = isPayroll ? PAYROLL_NAV : CORE_NAV;
 
   return (
     <nav style={{
@@ -150,7 +157,7 @@ export default function TopNav() {
         gap: 4,
         marginRight: 16
       }}>
-        {CORE_NAV.map((item) => (
+        {navigation.map((item) => (
           <NavLink
             key={item.to}
             to={item.to}
@@ -174,8 +181,10 @@ export default function TopNav() {
           </NavLink>
         ))}
         
-        <NavDropdown label="Reports" items={REPORTS_NAV} />
-        <NavDropdown label="Admin" items={ADMIN_NAV} />
+        {!isPayroll && <>
+          <NavDropdown label="Reports" items={REPORTS_NAV} />
+          <NavDropdown label="Admin" items={ADMIN_NAV} />
+        </>}
       </div>
 
       {/* User Controls */}

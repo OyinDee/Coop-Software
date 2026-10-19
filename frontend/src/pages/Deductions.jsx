@@ -573,8 +573,30 @@ export default function Deductions() {
         </div>
       </div>
 
-      {isPayroll && !loading && !hasData && (
-        <div className="info-box">No monthly payroll data is available for this period.</div>
+      {isPayroll && !loading && (
+        <div style={{
+          padding: '16px 18px',
+          borderBottom: '1px solid var(--border)',
+          color: 'var(--muted)',
+          fontSize: 13,
+        }}>
+          {hasData ? (
+            <>
+              <strong style={{ color: 'var(--text)' }}>Payroll data ready</strong>
+              <span style={{ marginLeft: 10 }}>{members.length} member records for {MONTHS[month - 1]} {year}.</span>
+              <div style={{ marginTop: 8 }}>
+                {reconciliationData
+                  ? `Reconciliation uploaded: ${Object.keys(reconciliationData).length} payroll records processed.`
+                  : 'No reconciliation has been uploaded for this period yet.'}
+              </div>
+            </>
+          ) : (
+            <>
+              <strong style={{ color: 'var(--text)' }}>No payroll data for {MONTHS[month - 1]} {year}.</strong>
+              <div style={{ marginTop: 8 }}>An administrator needs to upload the monthly deductions file before payroll can be exported or reconciled.</div>
+            </>
+          )}
+        </div>
       )}
 
       {!isPayroll && <>
