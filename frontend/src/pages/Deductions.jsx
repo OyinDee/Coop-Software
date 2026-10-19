@@ -599,6 +599,73 @@ export default function Deductions() {
         </div>
       )}
 
+      {isPayroll && hasData && (
+        <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+          <div style={{
+            padding: '12px 18px',
+            borderBottom: '1px solid var(--border)',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 12,
+            flexWrap: 'wrap',
+          }}>
+            <input
+              className="form-input"
+              placeholder="Search name, ledger no, staff no…"
+              value={search}
+              onChange={(e) => setSearch(e.target.value)}
+              style={{ maxWidth: 280 }}
+            />
+            <span style={{ color: 'var(--muted)', fontSize: 12 }}>
+              {filtered.length} member{filtered.length !== 1 ? 's' : ''}
+            </span>
+          </div>
+          <div style={{ overflowX: 'auto' }}>
+            <table className="data-table">
+              <thead>
+                <tr>
+                  <th>Ledger No</th>
+                  <th>Member</th>
+                  <th>Staff No</th>
+                  <th style={{ textAlign: 'right' }}>Expected Deduction</th>
+                  <th style={{ textAlign: 'right' }}>Actual Deducted</th>
+                  <th style={{ textAlign: 'right' }}>Difference</th>
+                </tr>
+              </thead>
+              <tbody>
+                {paginated.map((member) => {
+                  const expected = rowTotal(member);
+                  const actual = getActualDeducted(member);
+                  const difference = actual === null ? null : expected - actual;
+                  return (
+                    <tr key={member.id}>
+                      <td className="td-mono td-gold">{member.ledger_no || '—'}</td>
+                      <td>{member.full_name}</td>
+                      <td className="td-muted td-mono">{member.staff_no || '—'}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>{fmtNGN(expected)}</td>
+                      <td style={{ textAlign: 'right', fontFamily: 'var(--mono)' }}>
+                        {actual === null ? '—' : fmtNGN(actual)}
+                      </td>
+                      <td style={{
+                        textAlign: 'right',
+                        fontFamily: 'var(--mono)',
+                        color: difference === null ? 'var(--muted)' : difference > 0.01 ? 'var(--error)' : 'var(--success)',
+                      }}>
+                        {difference === null ? '—' : fmtNGN(difference)}
+                      </td>
+                    </tr>
+                  );
+                })}
+                {filtered.length === 0 && (
+                  <tr><td colSpan="6" style={{ textAlign: 'center', padding: 36, color: 'var(--muted)' }}>No members match your search.</td></tr>
+                )}
+              </tbody>
+            </table>
+          </div>
+          <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onChange={(nextPage) => { setPage(nextPage); window.scrollTo(0, 0); }} />
+        </div>
+      )}
+
       {!isPayroll && <>
       {/* Month banner and Totals */}
       <div style={{

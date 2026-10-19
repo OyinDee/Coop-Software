@@ -1493,11 +1493,32 @@ async function emailMonthlyReports(req, res) {
 
   if (req.body.preview === true) {
     try {
-      const count = await db.query(
+      const page = Number(req.body.page ?? 1);
+      const pageSize = Number(req.body.page_size ?? 25);
+      if (!Number.isInteger(page) || page < 1 || !Number.isInteger(pageSize) || pageSize < 1 || pageSize > 100) {
+        return res.status(400).json({ error: 'page must be positive and page_size must be between 1 and 100' });
+      }
+      const offset = (page - 1) * pageSize;
+      const [count, recipients] = await Promise.all([
+        db.query(
         `SELECT COUNT(*)::int AS total FROM members
          WHERE is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL`
-      );
-      return res.json({ month, year, total_count: count.rows[0].total });
+        ),
+        db.query(
+          `SELECT id, ledger_no, full_name, staff_no, email FROM members
+           WHERE is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL
+           ORDER BY ledger_no LIMIT $1 OFFSET $2`,
+          [pageSize, offset]
+        ),
+      ]);
+      return res.json({
+        month,
+        year,
+        page,
+        page_size: pageSize,
+        total_count: count.rows[0].total,
+        recipients: recipients.rows,
+      });
     } catch (err) {
       return res.status(500).json({ error: err.message });
     }
@@ -1541,7 +1562,9 @@ async function emailMonthlyReports(req, res) {
       }
 
       const scoped = await db.query(
-        `SELECT id FROM members WHERE id = ANY($1::int[]) ORDER BY ledger_no`,
+        `SELECT id FROM members
+         WHERE id = ANY($1::int[]) AND is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL
+         ORDER BY ledger_no`,
         [memberIds]
       );
       memberRows = scoped.rows;

@@ -13,10 +13,14 @@ export default function PersonalLedger() {
   const { admin } = useAuth();
   const isPayroll = admin?.role === 'payroll';
   const [members, setMembers] = useState([]);
+  const [recipients, setRecipients] = useState([]);
+  const [recipientTotal, setRecipientTotal] = useState(0);
+  const [recipientsLoading, setRecipientsLoading] = useState(true);
   const [search, setSearch] = useState('');
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
   const [page, setPage] = useState(1);
+  const [recipientPage, setRecipientPage] = useState(1);
   const [emailMonth, setEmailMonth] = useState(new Date().getMonth() + 1);
   const [emailYear, setEmailYear] = useState(new Date().getFullYear());
   const [sendingReports, setSendingReports] = useState(false);
@@ -40,71 +44,89 @@ export default function PersonalLedger() {
 
   useEffect(() => { setPage(1); }, [search]);
 
+  useEffect(() => {
+    setRecipientsLoading(true);
+    api.post('/members/reports/email-monthly', {
+      month: emailMonth,
+      year: emailYear,
+      preview: true,
+      page: recipientPage,
+      page_size: PAGE_SIZE,
+    })
+      .then((r) => {
+        setRecipients(r.data.recipients || []);
+        setRecipientTotal(r.data.total_count || 0);
+      })
+      .catch((err) => toast(err.response?.data?.error || 'Could not load email recipients', 'error'))
+      .finally(() => setRecipientsLoading(false));
+  }, [emailMonth, emailYear, recipientPage]);
+
   const pageStart = (page - 1) * PAGE_SIZE;
   const pageMembers = members.slice(pageStart, pageStart + PAGE_SIZE);
 
   const sendMonthlyReports = async () => {
+    if (recipients.length === 0) {
+      toast('There are no email recipients on this page.', 'warning');
+      return;
+    }
+    if (!window.confirm(`Send ${emailMonth}/${emailYear} monthly reports to these ${recipients.length} members?`)) return;
+
     setSendingReports(true);
-    setReportProgress(null);
+    setReportProgress({ sent: 0, skipped: 0, failed: 0, total: recipients.length });
     try {
-      const preview = await api.post('/members/reports/email-monthly', {
+      const response = await api.post('/members/reports/email-monthly', {
         month: emailMonth,
         year: emailYear,
-        preview: true,
+        member_ids: recipients.map((member) => member.id),
       });
-      const totalCount = preview.data.total_count || 0;
-
-      if (totalCount === 0) {
-        toast('No active members with email addresses found.', 'warning');
-        setSendingReports(false);
-        return;
-      }
-
-      if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to ${totalCount} members with email addresses?`)) {
-        setSendingReports(false);
-        return;
-      }
-
-      const chunkSize = 10;
-      let sentCount = 0;
-      let skippedCount = 0;
-      let failedCount = 0;
-
-      setReportProgress({ sent: 0, skipped: 0, failed: 0, total: totalCount });
-
-      for (let offset = 0; offset < totalCount; offset += chunkSize) {
-        try {
-          const response = await api.post('/members/reports/email-monthly', {
-            month: emailMonth,
-            year: emailYear,
-            batch_offset: offset,
-            batch_size: chunkSize,
-          });
-          const data = response.data;
-          sentCount += data.sent_count || 0;
-          skippedCount += data.skipped_count || 0;
-          failedCount += data.failed_count || 0;
-        } catch (err) {
-          failedCount += Math.min(chunkSize, totalCount - offset);
-          console.error('Error sending batch:', err);
-        }
-
-        setReportProgress({
-          sent: sentCount,
-          skipped: skippedCount,
-          failed: failedCount,
-          total: totalCount
-        });
-      }
-
-      toast(`Finished sending reports. Sent: ${sentCount}, Skipped: ${skippedCount}, Failed: ${failedCount}`);
+      const { sent_count = 0, skipped_count = 0, failed_count = 0 } = response.data;
+      setReportProgress({ sent: sent_count, skipped: skipped_count, failed: failed_count, total: recipients.length });
+      toast(`Page complete. Sent: ${sent_count}, Skipped: ${skipped_count}, Failed: ${failed_count}`);
     } catch (err) {
       toast(err.response?.data?.error || 'Failed to send reports', 'error');
     } finally {
       setSendingReports(false);
-      setReportProgress(null);
     }
   };
+
+  const recipientPanel = (
+    <div className="card" style={{ padding: 0, marginBottom: 20, overflow: 'hidden' }}>
+      <div style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
+        <div>
+          <div className="card-title" style={{ marginBottom: 4 }}>Monthly Report Recipients</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{recipientTotal} active members have an email address. Only this page will be sent.</div>
+        </div>
+        <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports || recipientsLoading || recipients.length === 0}>
+          {sendingReports ? 'Sending this page…' : `Send This Page (${recipients.length})`}
+        </button>
+      </div>
+      <div style={{ overflowX: 'auto' }}>
+        <table className="data-table">
+          <thead><tr><th>Ledger No</th><th>Member</th><th>Staff No</th><th>Email Address</th></tr></thead>
+          <tbody>
+            {recipientsLoading ? (
+              <tr><td colSpan="4" style={{ textAlign: 'center', padding: 28, color: 'var(--muted)' }}>Loading recipients…</td></tr>
+            ) : recipients.length === 0 ? (
+              <tr><td colSpan="4" style={{ textAlign: 'center', padding: 28, color: 'var(--muted)' }}>No members with email addresses.</td></tr>
+            ) : recipients.map((member) => (
+              <tr key={member.id}>
+                <td className="td-mono td-gold">{member.ledger_no || '—'}</td>
+                <td>{member.full_name}</td>
+                <td className="td-muted td-mono">{member.staff_no || '—'}</td>
+                <td>{member.email}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <Pagination page={recipientPage} pageSize={PAGE_SIZE} total={recipientTotal} onChange={(nextPage) => { setRecipientPage(nextPage); setReportProgress(null); }} />
+      {reportProgress && (
+        <div style={{ padding: '0 18px 14px', fontSize: 12, color: 'var(--muted)' }}>
+          Last page result: {reportProgress.sent} sent, {reportProgress.skipped} skipped, {reportProgress.failed} failed.
+        </div>
+      )}
+    </div>
+  );
 
   if (isPayroll) {
     return (
@@ -115,17 +137,15 @@ export default function PersonalLedger() {
             <div className="page-title">Email Monthly Reports</div>
           </div>
           <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => setEmailMonth(Number(e.target.value))}>
+            <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => { setEmailMonth(Number(e.target.value)); setRecipientPage(1); setReportProgress(null); }}>
               {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
                 <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
               ))}
             </select>
-            <input className="form-input" type="number" min="2000" max="9999" style={{ height: 34, width: 92 }} value={emailYear} onChange={(e) => setEmailYear(Number(e.target.value || new Date().getFullYear()))} />
-            <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports}>
-              {sendingReports ? (reportProgress ? `Sending (${reportProgress.sent + reportProgress.skipped + reportProgress.failed}/${reportProgress.total})...` : 'Starting...') : 'Email Monthly Reports'}
-            </button>
+            <input className="form-input" type="number" min="2000" max="9999" style={{ height: 34, width: 92 }} value={emailYear} onChange={(e) => { setEmailYear(Number(e.target.value || new Date().getFullYear())); setRecipientPage(1); setReportProgress(null); }} />
           </div>
         </div>
+        {recipientPanel}
       </Layout>
     );
   }
@@ -138,7 +158,7 @@ export default function PersonalLedger() {
           <div className="page-title">Personal Ledger</div>
         </div>
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => setEmailMonth(Number(e.target.value))}>
+          <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => { setEmailMonth(Number(e.target.value)); setRecipientPage(1); setReportProgress(null); }}>
             {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
               <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
             ))}
@@ -150,17 +170,12 @@ export default function PersonalLedger() {
             max="9999"
             style={{ height: 34, width: 92 }}
             value={emailYear}
-            onChange={(e) => setEmailYear(Number(e.target.value || new Date().getFullYear()))}
+            onChange={(e) => { setEmailYear(Number(e.target.value || new Date().getFullYear())); setRecipientPage(1); setReportProgress(null); }}
           />
-          <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports}>
-            {sendingReports 
-              ? (reportProgress 
-                  ? `Sending (${reportProgress.sent + reportProgress.skipped + reportProgress.failed}/${reportProgress.total})...`
-                  : 'Starting...')
-              : 'Email Monthly Reports'}
-          </button>
         </div>
       </div>
+
+      {recipientPanel}
 
       <div className="search-bar">
         <svg width="14" height="14" fill="none" stroke="var(--faint)" strokeWidth="1.8" viewBox="0 0 24 24">
