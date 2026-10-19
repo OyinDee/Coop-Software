@@ -36,7 +36,7 @@ async function createAdmin(req, res) {
     return res.status(400).json({ error: 'username and password are required' });
   }
 
-  const normalizedRole = role === 'superadmin' ? 'superadmin' : 'admin';
+  const normalizedRole = role === 'superadmin' ? 'superadmin' : role === 'payroll' ? 'payroll' : 'admin';
 
   try {
     const passwordHash = await bcrypt.hash(password, 10);
@@ -64,7 +64,7 @@ async function updateAdmin(req, res) {
   }
 
   const { username, password, full_name, role } = req.body;
-  const normalizedRole = role === 'superadmin' ? 'superadmin' : role === 'admin' ? 'admin' : null;
+  const normalizedRole = role === 'superadmin' ? 'superadmin' : role === 'payroll' ? 'payroll' : role === 'admin' ? 'admin' : null;
 
   try {
     const current = await db.query('SELECT id FROM admins WHERE id = $1', [adminId]);

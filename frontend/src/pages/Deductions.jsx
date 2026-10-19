@@ -6,6 +6,7 @@ import Pagination from '../components/Pagination';
 import api        from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZE = 25;
 
@@ -291,6 +292,8 @@ function EditEntryModal({ member, month, year, onSave, onClose }) {
 // ── Main page ─────────────────────────────────────────────────────────────────
 export default function Deductions() {
   const toast = useToast();
+  const { admin } = useAuth();
+  const isPayroll = admin?.role === 'payroll';
   const now   = new Date();
   const [month, setMonth]   = useState(now.getMonth() + 1);
   const [year,  setYear]    = useState(now.getFullYear());
@@ -543,10 +546,10 @@ export default function Deductions() {
             onChange={(e) => setYear(Number(e.target.value))}
             min="2000" max="2100"
           />
-          <button className="btn btn-primary" onClick={() => setUploading(true)}>
+          {!isPayroll && <button className="btn btn-primary" onClick={() => setUploading(true)}>
             Upload CSV
-          </button>
-          {hasData && (
+          </button>}
+          {!isPayroll && hasData && (
             <button
               className="btn btn-secondary"
               onClick={() => handleGenerateFrom(month, year)}
@@ -556,9 +559,9 @@ export default function Deductions() {
               {generating ? 'Generating…' : `Generate ${MONTHS[nextMonth - 1]} ${nextYear}`}
             </button>
           )}
-          <button className="btn btn-secondary" onClick={exportCSV} disabled={loading || !hasData}>
+          {!isPayroll && <button className="btn btn-secondary" onClick={exportCSV} disabled={loading || !hasData}>
             Export Detailed CSV
-          </button>
+          </button>}
           <button className="btn btn-primary" onClick={exportReconciliationCSV} disabled={loading || !hasData}>
             Export Payroll CSV
           </button>
@@ -570,6 +573,11 @@ export default function Deductions() {
         </div>
       </div>
 
+      {isPayroll && !loading && !hasData && (
+        <div className="info-box">No monthly payroll data is available for this period.</div>
+      )}
+
+      {!isPayroll && <>
       {/* Month banner and Totals */}
       <div style={{
         background: 'rgba(200,168,75,.06)', border: '1px solid rgba(200,168,75,.2)',
@@ -802,8 +810,9 @@ export default function Deductions() {
         </div>
         <Pagination page={page} pageSize={PAGE_SIZE} total={filtered.length} onChange={(p) => { setPage(p); window.scrollTo(0,0); }} />
       </div>
+      </>}
 
-      {uploading && (
+      {!isPayroll && uploading && (
         <UploadModal
           month={month}
           year={year}

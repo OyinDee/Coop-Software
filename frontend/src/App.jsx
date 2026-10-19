@@ -17,7 +17,7 @@ import Deductions from './pages/Deductions';
 import MemberReactivation from './pages/MemberReactivation';
 import PWAInstallBanner from './components/PWAInstallBanner';
 
-function ProtectedRoute({ children }) {
+function ProtectedRoute({ children, allowPayroll = false }) {
   const { admin, loading } = useAuth();
   if (loading) {
     return (
@@ -26,7 +26,9 @@ function ProtectedRoute({ children }) {
       </div>
     );
   }
-  return admin ? children : <Navigate to="/login" replace />;
+  if (!admin) return <Navigate to="/login" replace />;
+  if (admin.role === 'payroll' && !allowPayroll) return <Navigate to="/deductions" replace />;
+  return children;
 }
 
 export default function App() {
@@ -40,14 +42,14 @@ export default function App() {
             <Route path="/" element={<Navigate to="/dashboard" replace />} />
             <Route path="/dashboard" element={<ProtectedRoute><Dashboard /></ProtectedRoute>} />
             <Route path="/members" element={<ProtectedRoute><Members /></ProtectedRoute>} />
-            <Route path="/ledger" element={<ProtectedRoute><PersonalLedger /></ProtectedRoute>} />
+            <Route path="/ledger" element={<ProtectedRoute allowPayroll><PersonalLedger /></ProtectedRoute>} />
             <Route path="/ledger/:id" element={<ProtectedRoute><MemberDetail /></ProtectedRoute>} />
             <Route path="/loans" element={<ProtectedRoute><Loans /></ProtectedRoute>} />
             <Route path="/savings" element={<ProtectedRoute><Savings /></ProtectedRoute>} />
             <Route path="/commodity" element={<ProtectedRoute><Commodity /></ProtectedRoute>} />
             <Route path="/transactions" element={<ProtectedRoute><Transactions /></ProtectedRoute>} />
             <Route path="/balances"    element={<ProtectedRoute><Balances /></ProtectedRoute>} />
-            <Route path="/deductions"  element={<ProtectedRoute><Deductions /></ProtectedRoute>} />
+            <Route path="/deductions"  element={<ProtectedRoute allowPayroll><Deductions /></ProtectedRoute>} />
             <Route path="/reactivate"  element={<ProtectedRoute><MemberReactivation /></ProtectedRoute>} />
             <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
           </Routes>

@@ -103,6 +103,9 @@ export default function Sidebar() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
+  const visibleNav = admin?.role === 'payroll'
+    ? NAV.filter((item) => item.label === 'Deductions' || item.label === 'Personal Ledger')
+    : NAV;
 
   return (
     <aside style={{
@@ -120,7 +123,7 @@ export default function Sidebar() {
       </div>
 
       <nav style={{ padding: '14px 0', flex: 1, overflowY: 'auto' }}>
-        {NAV.map((item, i) =>
+        {visibleNav.map((item, i) =>
           item.section ? (
             <div key={i} style={{
               padding: '16px 22px 6px', fontFamily: 'var(--mono)', fontSize: 9,

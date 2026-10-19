@@ -5,10 +5,13 @@ import Pagination from '../components/Pagination';
 import api from '../api';
 import { fmtNGN } from '../utils/format';
 import { useToast } from '../context/ToastContext';
+import { useAuth } from '../context/AuthContext';
 
 const PAGE_SIZE = 25;
 
 export default function PersonalLedger() {
+  const { admin } = useAuth();
+  const isPayroll = admin?.role === 'payroll';
   const [members, setMembers] = useState([]);
   const [search, setSearch] = useState('');
   const [total, setTotal] = useState(0);
@@ -28,11 +31,12 @@ export default function PersonalLedger() {
       .finally(() => setLoading(false));
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { if (!isPayroll) load(); }, [isPayroll]);
   useEffect(() => {
+    if (isPayroll) return undefined;
     const t = setTimeout(() => load(search), 300);
     return () => clearTimeout(t);
-  }, [search]);
+  }, [search, isPayroll]);
 
   useEffect(() => { setPage(1); }, [search]);
 
@@ -43,52 +47,45 @@ export default function PersonalLedger() {
     setSendingReports(true);
     setReportProgress(null);
     try {
-      // Fetch all members using a high limit to get all records
-      const resAll = await api.get('/members', { params: { limit: 100000 } });
-      const allMembers = resAll.data.members || [];
-      const membersWithEmail = allMembers.filter(m => m.email && m.email.trim());
+      const preview = await api.post('/members/reports/email-monthly', {
+        month: emailMonth,
+        year: emailYear,
+        preview: true,
+      });
+      const totalCount = preview.data.total_count || 0;
 
-      if (membersWithEmail.length === 0) {
+      if (totalCount === 0) {
         toast('No active members with email addresses found.', 'warning');
         setSendingReports(false);
         return;
       }
 
-      if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to ${membersWithEmail.length} members with email addresses?`)) {
+      if (!window.confirm(`Send monthly reports for ${emailMonth}/${emailYear} to ${totalCount} members with email addresses?`)) {
         setSendingReports(false);
         return;
       }
 
-      // Chunk members into batches of 10
       const chunkSize = 10;
-      const chunks = [];
-      for (let i = 0; i < membersWithEmail.length; i += chunkSize) {
-        chunks.push(membersWithEmail.slice(i, i + chunkSize));
-      }
-
       let sentCount = 0;
       let skippedCount = 0;
       let failedCount = 0;
-      const totalCount = membersWithEmail.length;
 
       setReportProgress({ sent: 0, skipped: 0, failed: 0, total: totalCount });
 
-      for (let c = 0; c < chunks.length; c++) {
-        const chunk = chunks[c];
-        const memberIds = chunk.map(m => m.id);
-
+      for (let offset = 0; offset < totalCount; offset += chunkSize) {
         try {
           const response = await api.post('/members/reports/email-monthly', {
             month: emailMonth,
             year: emailYear,
-            member_ids: memberIds,
+            batch_offset: offset,
+            batch_size: chunkSize,
           });
           const data = response.data;
           sentCount += data.sent_count || 0;
           skippedCount += data.skipped_count || 0;
           failedCount += data.failed_count || 0;
         } catch (err) {
-          failedCount += chunk.length;
+          failedCount += Math.min(chunkSize, totalCount - offset);
           console.error('Error sending batch:', err);
         }
 
@@ -108,6 +105,30 @@ export default function PersonalLedger() {
       setReportProgress(null);
     }
   };
+
+  if (isPayroll) {
+    return (
+      <Layout title="Email Reports">
+        <div className="page-header">
+          <div>
+            <div className="page-eyebrow">Member communications</div>
+            <div className="page-title">Email Monthly Reports</div>
+          </div>
+          <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <select className="form-input" style={{ height: 34, minWidth: 72 }} value={emailMonth} onChange={(e) => setEmailMonth(Number(e.target.value))}>
+              {Array.from({ length: 12 }, (_, i) => i + 1).map((m) => (
+                <option key={m} value={m}>{String(m).padStart(2, '0')}</option>
+              ))}
+            </select>
+            <input className="form-input" type="number" min="2000" max="9999" style={{ height: 34, width: 92 }} value={emailYear} onChange={(e) => setEmailYear(Number(e.target.value || new Date().getFullYear()))} />
+            <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports}>
+              {sendingReports ? (reportProgress ? `Sending (${reportProgress.sent + reportProgress.skipped + reportProgress.failed}/${reportProgress.total})...` : 'Starting...') : 'Email Monthly Reports'}
+            </button>
+          </div>
+        </div>
+      </Layout>
+    );
+  }
 
   return (
     <Layout title="Personal Ledger">

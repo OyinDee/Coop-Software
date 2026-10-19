@@ -488,6 +488,7 @@ export default function Settings() {
                 <label className="form-label">Role</label>
                 <select className="form-input" value={newAdminRole} onChange={(e) => setNewAdminRole(e.target.value)}>
                   <option value="admin">Admin</option>
+                  <option value="payroll">Payroll &amp; Email Access</option>
                   <option value="superadmin">Superadmin</option>
                 </select>
               </div>

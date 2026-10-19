@@ -1491,6 +1491,18 @@ async function emailMonthlyReports(req, res) {
   }
   const { month, year } = resolved;
 
+  if (req.body.preview === true) {
+    try {
+      const count = await db.query(
+        `SELECT COUNT(*)::int AS total FROM members
+         WHERE is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL`
+      );
+      return res.json({ month, year, total_count: count.rows[0].total });
+    } catch (err) {
+      return res.status(500).json({ error: err.message });
+    }
+  }
+
   const mailer = await getMailer();
   if (mailer.error) {
     return res.status(500).json({ error: mailer.error });
@@ -1498,7 +1510,28 @@ async function emailMonthlyReports(req, res) {
 
   try {
     let memberRows;
-    if (Array.isArray(req.body.member_ids) && req.body.member_ids.length > 0) {
+    let totalCount;
+    if (req.body.batch_offset !== undefined) {
+      const offset = Number(req.body.batch_offset);
+      const limit = Number(req.body.batch_size ?? 10);
+      if (!Number.isInteger(offset) || offset < 0 || !Number.isInteger(limit) || limit < 1 || limit > 50) {
+        return res.status(400).json({ error: 'batch_offset must be non-negative and batch_size must be between 1 and 50' });
+      }
+      const [batch, count] = await Promise.all([
+        db.query(
+          `SELECT id FROM members
+           WHERE is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL
+           ORDER BY ledger_no LIMIT $1 OFFSET $2`,
+          [limit, offset]
+        ),
+        db.query(
+          `SELECT COUNT(*)::int AS total FROM members
+           WHERE is_active = TRUE AND NULLIF(BTRIM(email), '') IS NOT NULL`
+        ),
+      ]);
+      memberRows = batch.rows;
+      totalCount = count.rows[0].total;
+    } else if (Array.isArray(req.body.member_ids) && req.body.member_ids.length > 0) {
       const memberIds = req.body.member_ids
         .map((v) => parseInt(v, 10))
         .filter((v) => Number.isInteger(v) && v > 0);
@@ -1539,6 +1572,7 @@ async function emailMonthlyReports(req, res) {
       month,
       year,
       total: memberRows.length,
+      total_count: totalCount ?? memberRows.length,
       sent_count: sent.length,
       skipped_count: skipped.length,
       failed_count: failed.length,
