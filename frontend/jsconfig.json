@@ -1,8 +1,7 @@
 {
   "compilerOptions": {
-    "baseUrl": ".",
     "paths": {
-      "virtual:pwa-register": ["node_modules/vite-plugin-pwa/client"]
+      "virtual:pwa-register": ["./node_modules/vite-plugin-pwa/client"]
     },
     "jsx": "react-jsx",
     "module": "ESNext",
