@@ -81,6 +81,7 @@ export default function MemberPortal() {
 
   return (
     <Layout
+      variant="member"
       title="My Account"
       actions={(
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
