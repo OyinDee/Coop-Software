@@ -110,9 +110,10 @@ export default function Layout({ title, actions, children, variant = 'admin' }) 
     return (
       <div style={{ display: 'flex', flexDirection: 'column', height: '100vh', overflow: 'hidden' }}>
         <MemberHeader actions={actions} />
-        <main style={{ flex: 1, overflowY: 'auto' }}>
+        <main style={{ flex: 1, minWidth: 0, overflowY: 'auto', overflowX: 'hidden' }}>
           <div style={{
             maxWidth: 1040,
+            width: '100%',
             margin: '0 auto',
             padding: '28px 20px 48px',
             paddingLeft: 'max(20px, env(safe-area-inset-left))',

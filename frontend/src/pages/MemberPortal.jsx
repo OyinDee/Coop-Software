@@ -123,15 +123,15 @@ export default function MemberPortal() {
       {loading ? (
         <div style={{ padding: 40, textAlign: 'center', color: 'var(--muted)' }}>Loading your statement…</div>
       ) : !summary ? (
-        <div className="info-box">No statement is available for this month.</div>
+        <div className="info-box">Data for {MONTH_NAMES[month - 1]} {year} is not available yet.</div>
       ) : (
         <>
           <div className="card" style={{ marginBottom: 20 }}>
             <div className="card-title" style={{ marginBottom: 12 }}>Member</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))', gap: 16 }}>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 160px), 1fr))', gap: 16 }}>
               <div>
                 <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 4 }}>Name</div>
-                <div>{member?.full_name}</div>
+                <div style={{ overflowWrap: 'anywhere' }}>{member?.full_name}</div>
               </div>
               <div>
                 <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 4 }}>Ledger No</div>
@@ -143,51 +143,57 @@ export default function MemberPortal() {
               </div>
               <div>
                 <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 4 }}>Email</div>
-                <div>{member?.email || '—'}</div>
+                <div style={{ overflowWrap: 'anywhere' }}>{member?.email || '—'}</div>
               </div>
             </div>
           </div>
 
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(190px, 1fr))', gap: 14, marginBottom: 20 }}>
-            {balances.map((item) => (
-              <div className="card" key={item.label}>
-                <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>
-                  {item.label}
-                </div>
-                <div className={item.className} style={{ fontSize: 20, fontFamily: 'var(--serif)' }}>
-                  {fmtNGN(item.value || 0)}
-                </div>
-              </div>
-            ))}
-          </div>
-
-          <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
-            <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
-              <div className="card-title" style={{ marginBottom: 4 }}>Transactions for {MONTH_NAMES[month - 1]} {year}</div>
-              <div style={{ fontSize: 12, color: 'var(--muted)' }}>
-                Total deduction this month: <strong>{fmtNGN(summary.total_deduction || 0)}</strong>
-              </div>
-            </div>
-            <table className="data-table">
-              <thead>
-                <tr><th>Transaction</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
-              </thead>
-              <tbody>
-                {rows.length === 0 ? (
-                  <tr><td colSpan="2" style={{ textAlign: 'center', padding: 28, color: 'var(--muted)' }}>No transactions were recorded for this month.</td></tr>
-                ) : rows.map((row) => (
-                  <tr key={row.label}>
-                    <td>{row.label}</td>
-                    <td className="td-mono" style={{ textAlign: 'right' }}>{fmtNGN(row.value)}</td>
-                  </tr>
+          {!data.hasData || rows.length === 0 ? (
+            <div className="info-box">Data for {MONTH_NAMES[month - 1]} {year} is not available yet.</div>
+          ) : (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(min(100%, 150px), 1fr))', gap: 14, marginBottom: 20 }}>
+                {balances.map((item) => (
+                  <div className="card" key={item.label}>
+                    <div style={{ fontSize: 10, letterSpacing: 1.5, textTransform: 'uppercase', color: 'var(--faint)', marginBottom: 8 }}>
+                      {item.label}
+                    </div>
+                    <div className={item.className} style={{ fontSize: 20, fontFamily: 'var(--serif)', overflowWrap: 'anywhere' }}>
+                      {fmtNGN(item.value || 0)}
+                    </div>
+                  </div>
                 ))}
-              </tbody>
-            </table>
-          </div>
+              </div>
 
-          <div style={{ marginTop: 14, fontSize: 11, color: 'var(--faint)' }}>
-            This is the same statement sent to your email each month. Contact the cooperative office if anything looks wrong.
-          </div>
+              <div className="card" style={{ padding: 0, overflow: 'hidden' }}>
+                <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                  <div className="card-title" style={{ marginBottom: 4 }}>Transactions for {MONTH_NAMES[month - 1]} {year}</div>
+                  <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                    Total deduction this month: <strong>{fmtNGN(summary.total_deduction || 0)}</strong>
+                  </div>
+                </div>
+                <table className="data-table">
+                  <thead>
+                    <tr><th>Transaction</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
+                  </thead>
+                  <tbody>
+                    {rows.length === 0 ? (
+                      <tr><td colSpan="2" style={{ textAlign: 'center', padding: 28, color: 'var(--muted)' }}>No transactions were recorded for this month.</td></tr>
+                    ) : rows.map((row) => (
+                      <tr key={row.label}>
+                        <td>{row.label}</td>
+                        <td className="td-mono" style={{ textAlign: 'right' }}>{fmtNGN(row.value)}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+
+              <div style={{ marginTop: 14, fontSize: 11, color: 'var(--faint)' }}>
+                This is the same statement sent to your email each month. Contact the cooperative office if anything looks wrong.
+              </div>
+            </>
+          )}
 
           <div className="card" style={{ marginTop: 24, maxWidth: 460 }}>
             <div className="card-title" style={{ marginBottom: 4 }}>Change password</div>

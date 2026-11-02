@@ -38,6 +38,7 @@ async function getMyMonthlyReport(req, res) {
       member: { id, ledger_no, staff_no, full_name, email },
       month: report.month,
       year: report.year,
+      hasData: report.hasData,
       summary: report.summary,
     });
   } catch (err) {

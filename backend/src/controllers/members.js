@@ -546,6 +546,7 @@ async function getMonthlyReport(memberId, month, year) {
     member,
     month: targetMonth,
     year: targetYear,
+    hasData: Object.prototype.hasOwnProperty.call(byMonth, targetMonth),
     summary: report,
     subject,
     text,
