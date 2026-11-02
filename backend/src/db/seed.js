@@ -1,6 +1,7 @@
 require('dotenv').config({ path: require('path').join(__dirname, '../../.env') });
 const bcrypt = require('bcryptjs');
 const db = require('./index');
+const { ensureMemberAccount } = require('../utils/memberAccounts');
 
 async function seed() {
   const client = await db.getClient();
@@ -33,6 +34,7 @@ async function seed() {
         RETURNING id, ledger_no;
       `, m);
       memberIds[res.rows[0].ledger_no] = res.rows[0].id;
+      await ensureMemberAccount(res.rows[0].id, client);
     }
 
     // Savings

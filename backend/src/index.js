@@ -13,6 +13,7 @@ const settingsRoutes   = require('./routes/settings');
 const balancesRoutes   = require('./routes/balances');
 const deductionsRoutes = require('./routes/deductions');
 const adminRoutes      = require('./routes/admin');
+const portalRoutes     = require('./routes/portal');
 const migrate = require('./db/migrate');
 
 const app = express();
@@ -49,6 +50,7 @@ app.use('/api/settings',    settingsRoutes);
 app.use('/api/balances',    balancesRoutes);
 app.use('/api/deductions',  deductionsRoutes);
 app.use('/api/admin',       adminRoutes);
+app.use('/api/portal',      portalRoutes);
 
 app.get('/api/health', (req, res) => res.json({ status: 'ok' }));
 

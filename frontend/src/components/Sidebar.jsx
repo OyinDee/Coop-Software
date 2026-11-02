@@ -103,9 +103,21 @@ export default function Sidebar() {
   const { admin, logout } = useAuth();
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
-  const visibleNav = admin?.role === 'payroll'
-    ? NAV.filter((item) => item.label === 'Deductions' || item.label === 'Personal Ledger')
-    : NAV;
+  const memberNav = [
+    {
+      label: 'My Account', to: '/portal',
+      icon: (
+        <svg width="14" height="14" fill="none" stroke="currentColor" strokeWidth="1.8" viewBox="0 0 24 24">
+          <path d="M20 21v-2a4 4 0 00-4-4H8a4 4 0 00-4 4v2" /><circle cx="12" cy="7" r="4" />
+        </svg>
+      ),
+    },
+  ];
+  const visibleNav = admin?.role === 'member'
+    ? memberNav
+    : admin?.role === 'payroll'
+      ? NAV.filter((item) => item.label === 'Deductions' || item.label === 'Personal Ledger')
+      : NAV;
 
   return (
     <aside style={{

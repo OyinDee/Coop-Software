@@ -7,6 +7,7 @@ const path = require('path');
 db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(() => { });
 const XLSX = require('xlsx');           // npm install xlsx  (already in most Node stacks)
 const { parse } = require('csv-parse/sync');
+const { ensureMemberAccount } = require('../utils/memberAccounts');
 
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -543,6 +544,9 @@ async function getMonthlyReport(memberId, month, year) {
 
   return {
     member,
+    month: targetMonth,
+    year: targetYear,
+    summary: report,
     subject,
     text,
     html,
@@ -762,15 +766,53 @@ async function createMember(req, res) {
     return res.status(400).json({ error: 'ledger_no and full_name are required' });
   }
 
+  const client = await db.getClient();
   try {
-    const result = await db.query(`
+    await client.query('BEGIN');
+    const result = await client.query(`
       INSERT INTO members (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission, bank, account_number, department, next_of_kin, next_of_kin_relation)
       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
       RETURNING *
     `, [ledger_no, staff_no, gifmis_no, full_name, gender, marital_status, phone, email, date_of_admission || null, bank, account_number, department, next_of_kin, next_of_kin_relation]);
+
+    // Every member gets a portal login with the default password.
+    await ensureMemberAccount(result.rows[0].id, client);
+    await client.query('COMMIT');
+
     res.status(201).json({ member: result.rows[0] });
   } catch (err) {
+    await client.query('ROLLBACK');
     if (err.code === '23505') return res.status(409).json({ error: 'Ledger number already exists' });
+    res.status(500).json({ error: err.message });
+  } finally {
+    client.release();
+  }
+}
+
+async function updateMemberEmail(req, res) {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id) || id < 1) {
+    return res.status(400).json({ error: 'Invalid member id' });
+  }
+
+  const email = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+  if (!email) {
+    return res.status(400).json({ error: 'Email address is required' });
+  }
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+    return res.status(400).json({ error: 'Enter a valid email address' });
+  }
+
+  try {
+    const result = await db.query(
+      `UPDATE members SET email = $1, updated_at = NOW()
+       WHERE id = $2
+       RETURNING id, ledger_no, full_name, staff_no, email`,
+      [email, id]
+    );
+    if (!result.rows[0]) return res.status(404).json({ error: 'Member not found' });
+    res.json({ member: result.rows[0] });
+  } catch (err) {
     res.status(500).json({ error: err.message });
   }
 }
@@ -955,7 +997,7 @@ async function importCSV(req, res) {
       }
 
       try {
-        await db.query(`
+        const importedMember = await db.query(`
           INSERT INTO members
             (ledger_no, staff_no, gifmis_no, full_name, gender, marital_status,
              phone, email, date_of_admission, bank, account_number, department,
@@ -976,6 +1018,7 @@ async function importCSV(req, res) {
             next_of_kin     = COALESCE(EXCLUDED.next_of_kin,     members.next_of_kin),
             next_of_kin_relation = COALESCE(EXCLUDED.next_of_kin_relation, members.next_of_kin_relation),
             updated_at      = NOW()
+          RETURNING id
         `, [
           ledger_no.trim(),
           // Staff No
@@ -1003,6 +1046,7 @@ async function importCSV(req, res) {
           // Relationship
           findValue('Relationship', 'RELATIONSHIP', 'RELATION', 'Relation'),
         ]);
+        await ensureMemberAccount(importedMember.rows[0].id);
         imported++;
       } catch (e) {
         errors.push(`${ledger_no}: ${e.message}`);
@@ -1609,8 +1653,9 @@ async function emailMonthlyReports(req, res) {
 }
 
 module.exports = {
-  getMembers, getMember, createMember, updateMember, deleteMember,
+  getMembers, getMember, createMember, updateMember, updateMemberEmail, deleteMember,
   importCSV, importBalances, getMemberLedger,
   getDeactivatedMembers, reactivateMember,
-  emailMemberMonthlyReport, emailMonthlyReports
+  emailMemberMonthlyReport, emailMonthlyReports,
+  getMonthlyReport,
 };

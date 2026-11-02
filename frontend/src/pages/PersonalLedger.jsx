@@ -25,6 +25,9 @@ export default function PersonalLedger() {
   const [emailYear, setEmailYear] = useState(new Date().getFullYear());
   const [sendingReports, setSendingReports] = useState(false);
   const [reportProgress, setReportProgress] = useState(null); // { sent: 0, skipped: 0, failed: 0, total: 0 }
+  const [editingEmailId, setEditingEmailId] = useState(null);
+  const [emailDraft, setEmailDraft] = useState('');
+  const [savingEmailId, setSavingEmailId] = useState(null);
   const navigate = useNavigate();
   const toast = useToast();
 
@@ -89,12 +92,43 @@ export default function PersonalLedger() {
     }
   };
 
+  const startEditEmail = (member) => {
+    setEditingEmailId(member.id);
+    setEmailDraft(member.email || '');
+  };
+
+  const cancelEditEmail = () => {
+    setEditingEmailId(null);
+    setEmailDraft('');
+  };
+
+  const saveEmail = async (member) => {
+    const email = emailDraft.trim();
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      toast('Enter a valid email address', 'error');
+      return;
+    }
+    setSavingEmailId(member.id);
+    try {
+      const r = await api.put(`/members/${member.id}/email`, { email });
+      setRecipients((prev) => prev.map((row) => (
+        row.id === member.id ? { ...row, email: r.data.member.email } : row
+      )));
+      cancelEditEmail();
+      toast('Email address updated');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Could not update email address', 'error');
+    } finally {
+      setSavingEmailId(null);
+    }
+  };
+
   const recipientPanel = (
     <div className="card" style={{ padding: 0, marginBottom: 20, overflow: 'hidden' }}>
       <div style={{ padding: '14px 18px', display: 'flex', justifyContent: 'space-between', alignItems: 'center', borderBottom: '1px solid var(--border)' }}>
         <div>
           <div className="card-title" style={{ marginBottom: 4 }}>Monthly Report Recipients</div>
-          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{recipientTotal} active members have an email address. Only this page will be sent.</div>
+          <div style={{ fontSize: 12, color: 'var(--muted)' }}>{recipientTotal} active members have an email address. Only this page will be sent. Use Edit to fix an address.</div>
         </div>
         <button className="btn btn-primary btn-sm" onClick={sendMonthlyReports} disabled={sendingReports || recipientsLoading || recipients.length === 0}>
           {sendingReports ? 'Sending this page…' : `Send This Page (${recipients.length})`}
@@ -113,7 +147,42 @@ export default function PersonalLedger() {
                 <td className="td-mono td-gold">{member.ledger_no || '—'}</td>
                 <td>{member.full_name}</td>
                 <td className="td-muted td-mono">{member.staff_no || '—'}</td>
-                <td>{member.email}</td>
+                <td>
+                  {editingEmailId === member.id ? (
+                    <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+                      <input
+                        className="form-input"
+                        type="email"
+                        style={{ height: 30, minWidth: 220 }}
+                        value={emailDraft}
+                        onChange={(e) => setEmailDraft(e.target.value)}
+                        autoFocus
+                        onKeyDown={(e) => {
+                          if (e.key === 'Enter') { e.preventDefault(); saveEmail(member); }
+                          if (e.key === 'Escape') cancelEditEmail();
+                        }}
+                      />
+                      <button
+                        className="btn btn-primary btn-sm"
+                        type="button"
+                        onClick={() => saveEmail(member)}
+                        disabled={savingEmailId === member.id}
+                      >
+                        {savingEmailId === member.id ? 'Saving…' : 'Save'}
+                      </button>
+                      <button className="btn btn-ghost btn-sm" type="button" onClick={cancelEditEmail} disabled={savingEmailId === member.id}>
+                        Cancel
+                      </button>
+                    </div>
+                  ) : (
+                    <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                      <span>{member.email}</span>
+                      <button className="btn btn-ghost btn-sm" type="button" onClick={() => startEditEmail(member)}>
+                        Edit
+                      </button>
+                    </div>
+                  )}
+                </td>
               </tr>
             ))}
           </tbody>

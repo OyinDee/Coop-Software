@@ -14,8 +14,8 @@ export default function Login() {
     e.preventDefault();
     setError(''); setLoading(true);
     try {
-      await login(username, password);
-      navigate('/dashboard');
+      const account = await login(username, password);
+      navigate(account?.role === 'member' ? '/portal' : '/dashboard');
     } catch (err) {
       setError(err.response?.data?.error || 'Login failed');
     } finally {
@@ -89,7 +89,7 @@ export default function Login() {
           </button>
 
           <div style={{ marginTop: 14, fontSize: 10, color: 'var(--faint)', textAlign: 'center', fontFamily: 'var(--mono)', letterSpacing: .5 }}>
-          
+            Members: sign in with your ledger number, staff number or email.
           </div>
         </form>
       </div>

@@ -78,6 +78,26 @@ async function migrate() {
     await client.query(`CREATE INDEX IF NOT EXISTS idx_members_ledger_no ON members(ledger_no)`);
     await client.query(`CREATE INDEX IF NOT EXISTS idx_members_staff_no ON members(staff_no)`);
 
+    // Member portal accounts (one per member, created automatically)
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS member_accounts (
+        id SERIAL PRIMARY KEY,
+        member_id INTEGER NOT NULL UNIQUE REFERENCES members(id) ON DELETE CASCADE,
+        password_hash VARCHAR(255) NOT NULL,
+        created_at TIMESTAMPTZ DEFAULT NOW(),
+        updated_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_member_accounts_member ON member_accounts(member_id)`);
+
+    // Give every existing member a default portal login
+    const memberPasswordHash = await bcrypt.hash(process.env.MEMBER_DEFAULT_PASSWORD || 'member123', 10);
+    await client.query(`
+      INSERT INTO member_accounts (member_id, password_hash)
+      SELECT m.id, $1 FROM members m
+      WHERE NOT EXISTS (SELECT 1 FROM member_accounts a WHERE a.member_id = m.id);
+    `, [memberPasswordHash]);
+
     // Loans table
     await client.query(`
       CREATE TABLE IF NOT EXISTS loans (

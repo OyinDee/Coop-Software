@@ -34,6 +34,7 @@ export default function Settings() {
   const [creatingAdmin, setCreatingAdmin] = useState(false);
   const [deletingAdminId, setDeletingAdminId] = useState(null);
   const [deletingMembers, setDeletingMembers] = useState(false);
+  const [resettingAdminId, setResettingAdminId] = useState(null);
   const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [newAdminFullName, setNewAdminFullName] = useState('');
@@ -163,6 +164,24 @@ export default function Settings() {
       toast(err.response?.data?.error || 'Error creating admin', 'error');
     } finally {
       setCreatingAdmin(false);
+    }
+  };
+
+  const handleResetAdminPassword = async (adminRow) => {
+    const password = window.prompt(`New password for "${adminRow.username}" (at least 6 characters):`);
+    if (!password) return;
+    if (password.length < 6) {
+      toast('Password must be at least 6 characters', 'error');
+      return;
+    }
+    setResettingAdminId(adminRow.id);
+    try {
+      await api.put(`/admin/admins/${adminRow.id}`, { password });
+      toast('Password updated');
+    } catch (err) {
+      toast(err.response?.data?.error || 'Error updating password', 'error');
+    } finally {
+      setResettingAdminId(null);
     }
   };
 
@@ -513,15 +532,25 @@ export default function Settings() {
                           {adminRow.full_name || 'No name'} · {adminRow.role || 'admin'}
                         </div>
                       </div>
-                      <button
-                        type="button"
-                        className="btn btn-secondary"
-                        style={{ color: 'var(--danger, #e74c3c)' }}
-                        disabled={deletingAdminId === adminRow.id || adminRow.username === admin?.username}
-                        onClick={() => handleDeleteAdmin(adminRow)}
-                      >
-                        {deletingAdminId === adminRow.id ? 'Deleting…' : 'Delete'}
-                      </button>
+                      <div style={{ display: 'flex', gap: 6 }}>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          disabled={resettingAdminId === adminRow.id}
+                          onClick={() => handleResetAdminPassword(adminRow)}
+                        >
+                          {resettingAdminId === adminRow.id ? 'Saving…' : 'Reset password'}
+                        </button>
+                        <button
+                          type="button"
+                          className="btn btn-secondary"
+                          style={{ color: 'var(--danger, #e74c3c)' }}
+                          disabled={deletingAdminId === adminRow.id || adminRow.username === admin?.username}
+                          onClick={() => handleDeleteAdmin(adminRow)}
+                        >
+                          {deletingAdminId === adminRow.id ? 'Deleting…' : 'Delete'}
+                        </button>
+                      </div>
                     </div>
                   ))}
                 </div>

@@ -6,6 +6,7 @@ const {
   getMember,
   createMember,
   updateMember,
+  updateMemberEmail,
   deleteMember,
   importCSV,
   importBalances,
@@ -28,6 +29,7 @@ router.get('/:id/ledger', getMemberLedger);
 router.post('/:id/report/email', emailMemberMonthlyReport);
 router.get('/:id', getMember);
 router.post('/', createMember);
+router.put('/:id/email', updateMemberEmail);
 router.put('/:id', updateMember);
 router.put('/:id/reactivate', reactivateMember);
 router.delete('/:id', deleteMember);

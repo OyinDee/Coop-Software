@@ -15,19 +15,31 @@ import Settings from './pages/Settings';
 import Balances from './pages/Balances';
 import Deductions from './pages/Deductions';
 import MemberReactivation from './pages/MemberReactivation';
+import MemberPortal from './pages/MemberPortal';
 import PWAInstallBanner from './components/PWAInstallBanner';
+
+function LoadingScreen() {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--gold)', fontFamily: 'var(--serif)', fontSize: 20 }}>
+      Loading…
+    </div>
+  );
+}
 
 function ProtectedRoute({ children, allowPayroll = false }) {
   const { admin, loading } = useAuth();
-  if (loading) {
-    return (
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', height: '100vh', color: 'var(--gold)', fontFamily: 'var(--serif)', fontSize: 20 }}>
-        Loading…
-      </div>
-    );
-  }
+  if (loading) return <LoadingScreen />;
   if (!admin) return <Navigate to="/login" replace />;
+  if (admin.role === 'member') return <Navigate to="/portal" replace />;
   if (admin.role === 'payroll' && !allowPayroll) return <Navigate to="/deductions" replace />;
+  return children;
+}
+
+function MemberRoute({ children }) {
+  const { admin, loading } = useAuth();
+  if (loading) return <LoadingScreen />;
+  if (!admin) return <Navigate to="/login" replace />;
+  if (admin.role !== 'member') return <Navigate to="/dashboard" replace />;
   return children;
 }
 
@@ -52,6 +64,7 @@ export default function App() {
             <Route path="/deductions"  element={<ProtectedRoute allowPayroll><Deductions /></ProtectedRoute>} />
             <Route path="/reactivate"  element={<ProtectedRoute><MemberReactivation /></ProtectedRoute>} />
             <Route path="/settings"    element={<ProtectedRoute><Settings /></ProtectedRoute>} />
+            <Route path="/portal"      element={<MemberRoute><MemberPortal /></MemberRoute>} />
           </Routes>
           <PWAInstallBanner />
         </BrowserRouter>

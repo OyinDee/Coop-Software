@@ -111,7 +111,10 @@ export default function TopNav() {
   const navigate = useNavigate();
   const { theme, toggle } = useTheme();
   const isPayroll = admin?.role === 'payroll';
-  const navigation = isPayroll ? PAYROLL_NAV : CORE_NAV;
+  const isMember = admin?.role === 'member';
+  const navigation = isMember
+    ? [{ label: 'My Account', to: '/portal' }]
+    : isPayroll ? PAYROLL_NAV : CORE_NAV;
 
   return (
     <nav style={{
@@ -181,7 +184,7 @@ export default function TopNav() {
           </NavLink>
         ))}
         
-        {!isPayroll && <>
+        {!isPayroll && !isMember && <>
           <NavDropdown label="Reports" items={REPORTS_NAV} />
           <NavDropdown label="Admin" items={ADMIN_NAV} />
         </>}
