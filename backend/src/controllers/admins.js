@@ -18,7 +18,7 @@ async function listAdmins(req, res) {
 
   try {
     const result = await db.query(`
-      SELECT id, username, full_name, role, created_at
+      SELECT id, username, full_name, email, role, created_at
       FROM admins
       ORDER BY role DESC, username ASC
     `);
@@ -31,7 +31,7 @@ async function listAdmins(req, res) {
 async function createAdmin(req, res) {
   if (denyIfNotSuperadmin(req, res)) return;
 
-  const { username, password, full_name, role } = req.body;
+  const { username, password, full_name, email, role } = req.body;
   if (!username || !password) {
     return res.status(400).json({ error: 'username and password are required' });
   }
@@ -41,10 +41,10 @@ async function createAdmin(req, res) {
   try {
     const passwordHash = await bcrypt.hash(password, 10);
     const result = await db.query(`
-      INSERT INTO admins (username, password_hash, full_name, role)
-      VALUES ($1, $2, $3, $4)
-      RETURNING id, username, full_name, role, created_at
-    `, [username.trim(), passwordHash, full_name?.trim() || null, normalizedRole]);
+      INSERT INTO admins (username, password_hash, full_name, email, role)
+      VALUES ($1, $2, $3, $4, $5)
+      RETURNING id, username, full_name, email, role, created_at
+    `, [username.trim(), passwordHash, full_name?.trim() || null, email?.trim() || null, normalizedRole]);
 
     res.status(201).json({ admin: result.rows[0] });
   } catch (err) {
@@ -63,7 +63,7 @@ async function updateAdmin(req, res) {
     return res.status(400).json({ error: 'Invalid admin id' });
   }
 
-  const { username, password, full_name, role } = req.body;
+  const { username, password, full_name, email, role } = req.body;
   const normalizedRole = role === 'superadmin' ? 'superadmin' : role === 'payroll' ? 'payroll' : role === 'admin' ? 'admin' : null;
 
   try {
@@ -78,14 +78,16 @@ async function updateAdmin(req, res) {
         username = COALESCE($1, username),
         password_hash = COALESCE($2, password_hash),
         full_name = COALESCE($3, full_name),
-        role = COALESCE($4, role)
-      WHERE id = $5
-      RETURNING id, username, full_name, role, created_at
+        role = COALESCE($4, role),
+        email = COALESCE($5, email)
+      WHERE id = $6
+      RETURNING id, username, full_name, email, role, created_at
     `, [
       username?.trim() || null,
       passwordHash,
       full_name?.trim() || null,
       normalizedRole,
+      email?.trim() || null,
       adminId,
     ]);
 

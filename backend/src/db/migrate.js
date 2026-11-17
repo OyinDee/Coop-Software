@@ -359,6 +359,26 @@ async function migrate() {
       ON CONFLICT (key) DO NOTHING;
     `);
 
+    // Password reset tokens (shared by admin and member accounts).
+    // Only the SHA-256 hash of the token is stored.
+    await client.query(`
+      CREATE TABLE IF NOT EXISTS password_reset_tokens (
+        id SERIAL PRIMARY KEY,
+        user_type VARCHAR(10) NOT NULL CHECK (user_type IN ('admin', 'member')),
+        user_id INTEGER NOT NULL,
+        token_hash VARCHAR(64) NOT NULL UNIQUE,
+        expires_at TIMESTAMPTZ NOT NULL,
+        used_at TIMESTAMPTZ,
+        created_at TIMESTAMPTZ DEFAULT NOW()
+      );
+    `);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_user ON password_reset_tokens(user_type, user_id)`);
+    await client.query(`CREATE INDEX IF NOT EXISTS idx_password_reset_hash ON password_reset_tokens(token_hash)`);
+
+    // Optional contact email for administrator accounts so they can self-serve
+    // a password reset (member accounts already have members.email).
+    await client.query(`ALTER TABLE admins ADD COLUMN IF NOT EXISTS email VARCHAR(200)`);
+
     await client.query('COMMIT');
     console.log('Migration completed successfully');
   } catch (err) {

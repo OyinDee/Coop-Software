@@ -1,6 +1,23 @@
 const db = require('../db');
 const bcrypt = require('bcryptjs');
 const { getMonthlyReport } = require('./members');
+const { buildStatementPdf } = require('../utils/statementPdf');
+
+function resolvePeriod(req, res) {
+  const now = new Date();
+  const month = req.query.month === undefined ? now.getMonth() + 1 : Number(req.query.month);
+  const year = req.query.year === undefined ? now.getFullYear() : Number(req.query.year);
+
+  if (!Number.isInteger(month) || month < 1 || month > 12) {
+    res.status(400).json({ error: 'month must be between 1 and 12' });
+    return null;
+  }
+  if (!Number.isInteger(year) || year < 2000 || year > 9999) {
+    res.status(400).json({ error: 'year must be a valid 4-digit year' });
+    return null;
+  }
+  return { month, year };
+}
 
 async function getMyProfile(req, res) {
   try {
@@ -18,19 +35,11 @@ async function getMyProfile(req, res) {
 }
 
 async function getMyMonthlyReport(req, res) {
-  const now = new Date();
-  const month = req.query.month === undefined ? now.getMonth() + 1 : Number(req.query.month);
-  const year = req.query.year === undefined ? now.getFullYear() : Number(req.query.year);
-
-  if (!Number.isInteger(month) || month < 1 || month > 12) {
-    return res.status(400).json({ error: 'month must be between 1 and 12' });
-  }
-  if (!Number.isInteger(year) || year < 2000 || year > 9999) {
-    return res.status(400).json({ error: 'year must be a valid 4-digit year' });
-  }
+  const period = resolvePeriod(req, res);
+  if (!period) return;
 
   try {
-    const report = await getMonthlyReport(req.admin.memberId, month, year);
+    const report = await getMonthlyReport(req.admin.memberId, period.month, period.year);
     if (!report) return res.status(404).json({ error: 'Member not found' });
 
     const { id, ledger_no, staff_no, full_name, email } = report.member;
@@ -40,9 +49,41 @@ async function getMyMonthlyReport(req, res) {
       year: report.year,
       hasData: report.hasData,
       summary: report.summary,
+      commodities: report.commodities || [],
     });
   } catch (err) {
     res.status(500).json({ error: err.message });
+  }
+}
+
+// GET /api/portal/statement.pdf?month=&year=
+// Every member can download their own statement as a PDF.
+async function downloadMyStatementPdf(req, res) {
+  const period = resolvePeriod(req, res);
+  if (!period) return;
+
+  try {
+    const report = await getMonthlyReport(req.admin.memberId, period.month, period.year);
+    if (!report) return res.status(404).json({ error: 'Member not found' });
+
+    const pdf = buildStatementPdf({
+      member: report.member,
+      month: report.month,
+      year: report.year,
+      summary: report.summary,
+      commodities: report.commodities || [],
+    });
+
+    const safeLedger = String(report.member.ledger_no || report.member.id).replace(/[^A-Za-z0-9_-]/g, '-');
+    const filename = `${safeLedger}-statement-${report.year}-${String(report.month).padStart(2, '0')}.pdf`;
+
+    res.setHeader('Content-Type', 'application/pdf');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.setHeader('Content-Length', pdf.length);
+    res.send(pdf);
+  } catch (err) {
+    console.error('Statement PDF failed:', err);
+    res.status(500).json({ error: 'Could not build your statement PDF' });
   }
 }
 
@@ -79,4 +120,4 @@ async function changeMyPassword(req, res) {
   }
 }
 
-module.exports = { getMyProfile, getMyMonthlyReport, changeMyPassword };
+module.exports = { getMyProfile, getMyMonthlyReport, downloadMyStatementPdf, changeMyPassword };

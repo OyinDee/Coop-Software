@@ -1,5 +1,5 @@
 const db = require('../db');
-const nodemailer = require('nodemailer');
+const bcrypt = require('bcryptjs');
 const fs = require('fs');
 const path = require('path');
 // loans table needs optional description column – add it if it doesn't exist
@@ -8,6 +8,7 @@ db.query(`ALTER TABLE loans ADD COLUMN IF NOT EXISTS description TEXT`).catch(()
 const XLSX = require('xlsx');           // npm install xlsx  (already in most Node stacks)
 const { parse } = require('csv-parse/sync');
 const { ensureMemberAccount } = require('../utils/memberAccounts');
+const { getMailer } = require('../utils/mailer');
 
 
 const MONTH_LABELS = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
@@ -150,7 +151,7 @@ function buildLedgerRows({ byMonth, sharesMap, sharesBF, initialBF = {} }) {
   return { bf, rows, summary };
 }
 
-function buildMonthlyReportDocument({ member, month, year, current, previous }) {
+function buildMonthlyReportDocument({ member, month, year, current, previous, commodities = [] }) {
   const subjectPeriod = `${MONTH_LABELS[month - 1]} ${year}`;
   // Inline logo if available to avoid duplicate displayed attachments in email clients
   let logoDataUrl = null;
@@ -190,6 +191,21 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
       </tbody>
     </table>
   `;
+
+  const commoditySection = commodities.length ? `
+        <table class="section commodity-items">
+          <tbody>
+            <tr><th colspan="3" class="section-title">COMMODITY &amp; GADGETS PURCHASED</th></tr>
+            <tr><td class="item-head">ITEM</td><td class="item-head amount">MONTH</td><td class="item-head amount">AMOUNT</td></tr>
+            ${commodities.map((item) => `
+              <tr>
+                <td>${escapeHtml((item.description || 'Commodity / gadget purchase').trim())}</td>
+                <td class="amount">${escapeHtml(`${MONTH_LABELS[(Number(item.month) || month) - 1] || ''} ${item.year || year}`)}</td>
+                <td class="amount">${formatAmount(item.amount)}</td>
+              </tr>`).join('')}
+            <tr><td colspan="2" class="item-total">TOTAL COMMODITY PURCHASES</td><td class="amount item-total">${formatAmount(commodities.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}</td></tr>
+          </tbody>
+        </table>` : '';
 
   return `
     <!DOCTYPE html>
@@ -307,6 +323,10 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
           font-weight: 700;
           padding: 8px 0 10px;
         }
+        .commodity-items td { border: 1px solid #222; font-size: 11px; padding: 3px 6px; }
+        .commodity-items .item-head { font-size: 10px; font-weight: 700; background: #ececec; }
+        .commodity-items .amount { text-align: right; width: 22%; white-space: nowrap; }
+        .commodity-items .item-total { font-weight: 700; background: #f5f5f5; }
       </style>
     </head>
     <body>
@@ -368,6 +388,8 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
           row('Commodity Sales Balance C/F', `${formatAmount(current.comm_bal_cf)}`),
           'blue')}
 
+        ${commoditySection}
+
         ${section('SUMMARY:',
             row('SAVINGS', `${formatAmount(savingsValue)}`) +
             row('LOAN PRINCIPAL REPAYMENT', `${formatAmount(loanPrincipalValue)}`) +
@@ -397,48 +419,6 @@ function buildMonthlyReportDocument({ member, month, year, current, previous }) 
   `;
 }
 
-async function getMailer() {
-  let user = process.env.SMTP_USER;
-  let pass = process.env.SMTP_PASS;
-  let host = process.env.SMTP_HOST;
-  let port = process.env.SMTP_PORT;
-
-  if (!user || !pass) {
-    try {
-      const res = await db.query(
-        "SELECT key, value FROM app_settings WHERE key IN ('smtp_user', 'smtp_pass', 'smtp_host', 'smtp_port')"
-      );
-      const settings = Object.fromEntries(res.rows.map(r => [r.key, r.value]));
-      if (settings.smtp_user && settings.smtp_pass) {
-        user = user || settings.smtp_user;
-        pass = pass || settings.smtp_pass;
-        host = host || settings.smtp_host;
-        port = port || settings.smtp_port;
-      }
-    } catch (e) {
-      console.error('Error fetching SMTP settings from DB:', e);
-    }
-  }
-
-  if (!user || !pass) {
-    return { error: 'Missing SMTP configuration. Set SMTP_USER and SMTP_PASS in environment variables or Settings.' };
-  }
-
-  const transportConfig = host ? {
-    host,
-    port: parseInt(port) || 587,
-    secure: parseInt(port) === 465,
-    auth: { user, pass },
-  } : {
-    service: 'gmail',
-    auth: { user, pass },
-  };
-
-  const transporter = nodemailer.createTransport(transportConfig);
-
-  return { transporter, from: user };
-}
-
 async function getMonthlyReport(memberId, month, year) {
   const memberRes = await db.query(
     `SELECT id, full_name, ledger_no, staff_no, email, phone FROM members WHERE id=$1`,
@@ -462,6 +442,20 @@ async function getMonthlyReport(memberId, month, year) {
     if (!byMonth[row.month]) byMonth[row.month] = {};
     byMonth[row.month][row.column_key] = parseFloat(row.amount) || 0;
   }
+
+  // Itemized commodity / gadget purchases for the requested month.
+  const commoditiesRes = await db.query(
+    `SELECT description, amount, month, year FROM commodity
+     WHERE member_id=$1 AND month=$2 AND year=$3
+     ORDER BY created_at, id`,
+    [memberId, targetMonth, targetYear]
+  );
+  const commodities = commoditiesRes.rows.map((row) => ({
+    description: row.description,
+    amount: parseFloat(row.amount) || 0,
+    month: row.month,
+    year: row.year,
+  }));
 
   const ledger = buildLedgerRows({ byMonth, sharesMap: {}, sharesBF: 0 });
   const currentRow = ledger.rows[targetMonth - 1] || {
@@ -529,6 +523,7 @@ async function getMonthlyReport(memberId, month, year) {
     year: targetYear,
     current: report,
     previous: previousRow,
+    commodities,
   });
 
   const text = [
@@ -548,6 +543,7 @@ async function getMonthlyReport(memberId, month, year) {
     year: targetYear,
     hasData: Object.prototype.hasOwnProperty.call(byMonth, targetMonth),
     summary: report,
+    commodities,
     subject,
     text,
     html,
@@ -1653,10 +1649,59 @@ async function emailMonthlyReports(req, res) {
   }
 }
 
+// Admin fallback for members who cannot receive a reset email (or prefer to
+// speak to the office). Generates a one-time temporary password and returns it
+// once, so the admin can read it to the member over the phone.
+function generateTempPassword() {
+  const alphabet = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
+  let out = '';
+  for (let i = 0; i < 10; i += 1) {
+    out += alphabet[Math.floor(Math.random() * alphabet.length)];
+  }
+  return `${out.slice(0, 5)}-${out.slice(5)}`;
+}
+
+async function resetMemberPassword(req, res) {
+  const { id } = req.params;
+  try {
+    const memberRes = await db.query(
+      'SELECT id, ledger_no, full_name FROM members WHERE id = $1 AND is_active = TRUE',
+      [id]
+    );
+    const member = memberRes.rows[0];
+    if (!member) return res.status(404).json({ error: 'Member not found' });
+
+    await ensureMemberAccount(member.id);
+
+    const tempPassword = generateTempPassword();
+    const passwordHash = await bcrypt.hash(tempPassword, 10);
+
+    await db.query(
+      `UPDATE member_accounts SET password_hash = $1, updated_at = NOW() WHERE member_id = $2`,
+      [passwordHash, member.id]
+    );
+    // Any outstanding emailed reset links stop working.
+    await db.query(
+      `UPDATE password_reset_tokens SET used_at = NOW()
+       WHERE user_type = 'member' AND user_id = $1 AND used_at IS NULL`,
+      [member.id]
+    );
+
+    res.json({
+      ok: true,
+      tempPassword,
+      member: { id: member.id, ledger_no: member.ledger_no, full_name: member.full_name },
+    });
+  } catch (err) {
+    res.status(500).json({ error: err.message });
+  }
+}
+
 module.exports = {
   getMembers, getMember, createMember, updateMember, updateMemberEmail, deleteMember,
   importCSV, importBalances, getMemberLedger,
   getDeactivatedMembers, reactivateMember,
+  resetMemberPassword,
   emailMemberMonthlyReport, emailMonthlyReports,
   getMonthlyReport,
 };

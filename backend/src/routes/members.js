@@ -13,6 +13,7 @@ const {
   getMemberLedger,
   getDeactivatedMembers,
   reactivateMember,
+  resetMemberPassword,
   emailMemberMonthlyReport,
   emailMonthlyReports,
 } = require('../controllers/members');
@@ -32,6 +33,7 @@ router.post('/', createMember);
 router.put('/:id/email', updateMemberEmail);
 router.put('/:id', updateMember);
 router.put('/:id/reactivate', reactivateMember);
+router.post('/:id/temp-password', resetMemberPassword);
 router.delete('/:id', deleteMember);
 router.post('/import/csv', upload.single('file'), importCSV);
 router.post('/import/balances', upload.single('file'), importBalances);

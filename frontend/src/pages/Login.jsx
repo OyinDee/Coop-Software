@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { Link, useNavigate } from 'react-router-dom';
 import { useAuth } from '../context/AuthContext';
 
 export default function Login() {
@@ -90,6 +90,9 @@ export default function Login() {
 
           <div style={{ marginTop: 14, fontSize: 10, color: 'var(--faint)', textAlign: 'center', fontFamily: 'var(--mono)', letterSpacing: .5 }}>
             Members: sign in with your ledger number, staff number or email.
+          </div>
+          <div style={{ marginTop: 8, fontSize: 11, textAlign: 'center' }}>
+            <Link to="/forgot-password" style={{ color: 'var(--gold)' }}>Forgot your password?</Link>
           </div>
         </form>
       </div>

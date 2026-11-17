@@ -38,6 +38,7 @@ export default function Settings() {
   const [newAdminUsername, setNewAdminUsername] = useState('');
   const [newAdminPassword, setNewAdminPassword] = useState('');
   const [newAdminFullName, setNewAdminFullName] = useState('');
+  const [newAdminEmail, setNewAdminEmail] = useState('');
   const [newAdminRole, setNewAdminRole] = useState('admin');
 
   useEffect(() => {
@@ -152,12 +153,14 @@ export default function Settings() {
         username: newAdminUsername.trim(),
         password: newAdminPassword,
         full_name: newAdminFullName.trim() || null,
+        email: newAdminEmail.trim() || null,
         role: newAdminRole,
       });
       await refreshAdmins();
       setNewAdminUsername('');
       setNewAdminPassword('');
       setNewAdminFullName('');
+      setNewAdminEmail('');
       setNewAdminRole('admin');
       toast('Admin created');
     } catch (err) {
@@ -500,6 +503,10 @@ export default function Settings() {
                 <input className="form-input" value={newAdminFullName} onChange={(e) => setNewAdminFullName(e.target.value)} />
               </div>
               <div className="form-group">
+                <label className="form-label">Email (for password resets)</label>
+                <input className="form-input" type="email" value={newAdminEmail} onChange={(e) => setNewAdminEmail(e.target.value)} />
+              </div>
+              <div className="form-group">
                 <label className="form-label">Password</label>
                 <input className="form-input" type="password" value={newAdminPassword} onChange={(e) => setNewAdminPassword(e.target.value)} required />
               </div>
@@ -530,6 +537,7 @@ export default function Settings() {
                         <div style={{ fontWeight: 600 }}>{adminRow.username}</div>
                         <div style={{ fontSize: 12, color: 'var(--muted)' }}>
                           {adminRow.full_name || 'No name'} · {adminRow.role || 'admin'}
+                          {adminRow.email ? ` · ${adminRow.email}` : ''}
                         </div>
                       </div>
                       <div style={{ display: 'flex', gap: 6 }}>

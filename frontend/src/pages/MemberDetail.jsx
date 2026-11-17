@@ -40,6 +40,9 @@ export default function MemberDetail() {
   const [reportMonth, setReportMonth] = useState(new Date().getMonth() + 1);
   const [reportYear, setReportYear] = useState(new Date().getFullYear());
   const [sendingReport, setSendingReport] = useState(false);
+  const [resetPwOpen, setResetPwOpen] = useState(false);
+  const [tempPassword, setTempPassword] = useState('');
+  const [resettingPw, setResettingPw] = useState(false);
 
   // Ledger state
   const [ledger, setLedger]       = useState(null);
@@ -124,6 +127,29 @@ export default function MemberDetail() {
       await api.delete(`/loans/${loanId}`);
       toast('Loan deleted'); load(); loadLedger(ledgerYear);
     } catch { toast('Error', 'error'); }
+  };
+
+  const handleResetPassword = async () => {
+    if (!window.confirm("Reset this member's portal password? Their current password will stop working.")) return;
+    setResettingPw(true);
+    try {
+      const r = await api.post(`/members/${id}/temp-password`);
+      setTempPassword(r.data.tempPassword);
+      setResetPwOpen(true);
+    } catch (err) {
+      toast(err.response?.data?.error || 'Could not reset the password', 'error');
+    } finally {
+      setResettingPw(false);
+    }
+  };
+
+  const copyTempPassword = async () => {
+    try {
+      await navigator.clipboard.writeText(tempPassword);
+      toast('Temporary password copied');
+    } catch (err) {
+      toast('Select the password and copy it manually', 'error');
+    }
   };
 
   const handleDeleteCommodity = async (commodityId) => {
@@ -394,6 +420,9 @@ export default function MemberDetail() {
           />
           <button className="btn btn-ghost btn-sm" onClick={handleSendMemberReport} disabled={sendingReport}>
             {sendingReport ? 'Sending...' : 'Email Report'}
+          </button>
+          <button className="btn btn-ghost btn-sm" onClick={handleResetPassword} disabled={resettingPw}>
+            {resettingPw ? 'Resetting…' : 'Reset Password'}
           </button>
           <button className="btn btn-ghost btn-sm" onClick={openEditMember}>Edit</button>
         </div>
@@ -810,6 +839,30 @@ export default function MemberDetail() {
               <button type="submit" className="btn btn-primary" disabled={saving}>{saving ? 'Saving…' : 'Add Savings'}</button>
             </div>
           </form>
+        </Modal>
+      )}
+
+      {/* Temporary portal password */}
+      {resetPwOpen && (
+        <Modal title="Portal password reset" onClose={() => setResetPwOpen(false)}>
+          <div className="info-box" style={{ marginBottom: 16 }}>
+            Give this temporary password to {member.full_name}. Their old password no longer works.
+          </div>
+          <div style={{
+            fontFamily: 'var(--mono)', fontSize: 22, letterSpacing: 2, textAlign: 'center',
+            padding: '18px 12px', border: '1px dashed var(--border2)', borderRadius: 4,
+            background: 'var(--surface2)', userSelect: 'all', overflowWrap: 'anywhere',
+          }}>
+            {tempPassword}
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--muted)', marginTop: 14, lineHeight: 1.6 }}>
+            Ask the member to sign in and change it under “Change password” on their account page.
+            The password is shown only once, so copy it now.
+          </div>
+          <div className="modal-footer">
+            <button type="button" className="btn btn-ghost" onClick={() => setResetPwOpen(false)}>Close</button>
+            <button type="button" className="btn btn-primary" onClick={copyTempPassword}>Copy password</button>
+          </div>
         </Modal>
       )}
 

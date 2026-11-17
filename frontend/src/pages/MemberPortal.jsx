@@ -38,6 +38,34 @@ export default function MemberPortal() {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [savingPassword, setSavingPassword] = useState(false);
+  const [downloading, setDownloading] = useState(false);
+
+  const downloadPdf = async () => {
+    setDownloading(true);
+    try {
+      const r = await api.get('/portal/statement.pdf', {
+        params: { month, year },
+        responseType: 'blob',
+      });
+      const disposition = r.headers['content-disposition'] || '';
+      const match = disposition.match(/filename="?([^";]+)"?/i);
+      const filename = match
+        ? match[1]
+        : `statement-${year}-${String(month).padStart(2, '0')}.pdf`;
+      const url = window.URL.createObjectURL(r.data);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+    } catch (err) {
+      toast('Could not build your PDF. Please try again.', 'error');
+    } finally {
+      setDownloading(false);
+    }
+  };
 
   const changePassword = async (e) => {
     e.preventDefault();
@@ -71,6 +99,7 @@ export default function MemberPortal() {
   const member = data?.member;
   const summary = data?.summary;
   const rows = transactionRows(summary);
+  const commodities = data?.commodities || [];
 
   const balances = [
     { label: 'Savings balance', value: summary?.savings_cf, className: 'td-green' },
@@ -104,6 +133,9 @@ export default function MemberPortal() {
             value={year}
             onChange={(e) => setYear(Number(e.target.value || CURRENT_YEAR))}
           />
+          <button className="btn btn-primary btn-sm" onClick={downloadPdf} disabled={downloading || loading || !summary}>
+            {downloading ? 'Preparing…' : 'Save as PDF'}
+          </button>
         </div>
       )}
     >
@@ -192,6 +224,36 @@ export default function MemberPortal() {
               <div style={{ marginTop: 14, fontSize: 11, color: 'var(--faint)' }}>
                 This is the same statement sent to your email each month. Contact the cooperative office if anything looks wrong.
               </div>
+
+              {commodities.length > 0 && (
+                <div className="card" style={{ padding: 0, overflow: 'hidden', marginTop: 20 }}>
+                  <div style={{ padding: '14px 18px', borderBottom: '1px solid var(--border)' }}>
+                    <div className="card-title" style={{ marginBottom: 4 }}>Commodity &amp; Gadgets</div>
+                    <div style={{ fontSize: 12, color: 'var(--muted)' }}>
+                      Purchases recorded for {MONTH_NAMES[month - 1]} {year}
+                    </div>
+                  </div>
+                  <table className="data-table">
+                    <thead>
+                      <tr><th>Item</th><th style={{ textAlign: 'right' }}>Amount</th></tr>
+                    </thead>
+                    <tbody>
+                      {commodities.map((item, i) => (
+                        <tr key={item.id ?? i}>
+                          <td>{item.description || 'Commodity / gadget purchase'}</td>
+                          <td className="td-mono" style={{ textAlign: 'right' }}>{fmtNGN(item.amount || 0)}</td>
+                        </tr>
+                      ))}
+                      <tr>
+                        <td style={{ fontWeight: 700 }}>Total commodity purchases</td>
+                        <td className="td-mono" style={{ textAlign: 'right', fontWeight: 700 }}>
+                          {fmtNGN(commodities.reduce((sum, item) => sum + (Number(item.amount) || 0), 0))}
+                        </td>
+                      </tr>
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </>
           )}
 
